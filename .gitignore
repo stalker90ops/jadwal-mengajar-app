@@ -14,10 +14,14 @@
 
 # production
 /build
+/dist/
+/dist-electron/
 
 # misc
 .DS_Store
 *.pem
+cctv/
+ekinerja/
 
 # debug
 npm-debug.log*
@@ -27,6 +31,7 @@ yarn-error.log*
 # local env files
 .env*.local
 .env
+prisma/*.db*
 
 # vercel
 .vercel
@@ -34,3 +39,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.neon

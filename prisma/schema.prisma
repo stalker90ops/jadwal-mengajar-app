@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  password_hash String
+  role          String   @default("ADMIN")
+  createdAt     DateTime @default(now())
+}
+
+// Konfigurasi Hari Aktif Sekolah (Senin=1 .. Sabtu=6)
+model ActiveDay {
+  id        String     @id @default(uuid())
+  dayNumber Int        @unique // 1=Senin, 2=Selasa, 3=Rabu, 4=Kamis, 5=Jumat, 6=Sabtu
+  dayName   String     // "Senin", "Selasa", dst.
+  isActive  Boolean    @default(true)
+  timeSlots TimeSlot[]
+  schedules Schedule[]
+}
+
+// Slot Jam Pelajaran per Hari (misal Jam ke-1: 07:00-07:45, Istirahat: 09:15-09:30)
+model TimeSlot {
+  id           String     @id @default(uuid())
+  activeDayId  String
+  activeDay    ActiveDay  @relation(fields: [activeDayId], references: [id], onDelete: Cascade)
+  periodNumber Int        // Urutan slot (1, 2, 3...)
+  label        String     // "Jam Ke-1", "Istirahat 1", "Upacara"
+  startTime    String     // "07:00"
+  endTime      String     // "07:45"
+  isBreak      Boolean    @default(false) // true jika istirahat/upacara (tidak boleh diisi mapel)
+  schedules    Schedule[]
+
+  @@unique([activeDayId, periodNumber])
+}
+
+// Data Guru & Hari Keaktifannya
+model Teacher {
+  id               String               @id @default(uuid())
+  code             String               @unique // Misal: "GR-01"
+  nip              String?
+  name             String
+  phone            String?
+  maxPeriods       Int                  @default(24)
+  // JSON array berisi dayNumber yang aktif untuk guru ini, misal "[1,2,3,4,5]"
+  activeDays       String               @default("[1,2,3,4,5]")
+  // JSON array opsional berisi timeSlotId yang tidak tersedia, misal "[]"
+  unavailableSlots String               @default("[]")
+  assignments      TeachingAssignment[]
+  schedules        Schedule[]
+  createdAt        DateTime             @default(now())
+}
+
+// Data Mata Pelajaran
+model Subject {
+  id          String               @id @default(uuid())
+  code        String               @unique // Misal: "MAT-X"
+  name        String
+  category    String               @default("UMUM") // UMUM, KEJURUAN, MUATAN_LOKAL, LAB
+  color       String               @default("#2563eb")
+  requiresLab Boolean              @default(false)
+  assignments TeachingAssignment[]
+  schedules   Schedule[]
+  createdAt   DateTime             @default(now())
+}
+
+// Data Ruangan
+model Room {
+  id        String       @id @default(uuid())
+  code      String       @unique // Misal: "R-101", "LAB-KOM"
+  name      String
+  type      String       @default("TEORI") // TEORI, LAB, OLAHRAGA, AULA
+  capacity  Int          @default(36)
+  classes   ClassGroup[]
+  schedules Schedule[]
+  createdAt DateTime     @default(now())
+}
+
+// Data Kelas / Rombongan Belajar (Rombel)
+model ClassGroup {
+  id            String               @id @default(uuid())
+  code          String               @unique // Misal: "X-IPA-1"
+  name          String               // "Kelas X IPA 1"
+  grade         String               // "X", "XI", "XII"
+  defaultRoomId String?
+  defaultRoom   Room?                @relation(fields: [defaultRoomId], references: [id], onDelete: SetNull)
+  assignments   TeachingAssignment[]
+  schedules     Schedule[]
+  createdAt     DateTime             @default(now())
+}
+
+// Beban / Alokasi Tugas Mengajar (untuk Auto-Generate & Kontrol Kuota JP)
+model TeachingAssignment {
+  id              String     @id @default(uuid())
+  teacherId       String
+  teacher         Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subjectId       String
+  subject         Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  classGroupId    String
+  classGroup      ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+  preferredRoomId String?
+  totalPeriods    Int        @default(2) // Jumlah JP per minggu
+  maxPerDay       Int        @default(2) // Maksimal JP per pertemuan dalam 1 hari
+
+  @@unique([teacherId, subjectId, classGroupId])
+}
+
+// Item Jadwal Mengajar
+model Schedule {
+  id           String     @id @default(uuid())
+  activeDayId  String
+  activeDay    ActiveDay  @relation(fields: [activeDayId], references: [id], onDelete: Cascade)
+  timeSlotId   String
+  timeSlot     TimeSlot   @relation(fields: [timeSlotId], references: [id], onDelete: Cascade)
+  teacherId    String
+  teacher      Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subjectId    String
+  subject      Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  classGroupId String
+  classGroup   ClassGroup @relation(fields: [classGroupId], references: [id], onDelete: Cascade)
+  roomId       String
+  room         Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  notes        String?
+  isLocked     Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
