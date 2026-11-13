@@ -334,9 +334,8 @@ export function generateConflictFreeSchedule(params: {
       for (const blockSize of blockPlan) {
         let placedBlock = false;
 
-        // Strategi Pemadatan Hari (Day Packing):
-        // Padatkan jam pelajaran di hari yang sudah aktif agar FULL/PADAT,
-        // sehingga ada hari tertentu yang KOSONG SAMA SEKALI (tidak belajar) per rombel.
+        // Strategi Distribusi Sama Rata (Balanced Daily Load Senin - Jumat):
+        // Pastikan semua slot di hari Senin s/d Jumat terisi dan jumlah jam tatap muka per hari sama rata
         const sortedDays = [...activeDays].sort((a, b) => {
           const usageA =
             (classDayUsage.get(`${assignment.classGroupId}_${a.id}`) || 0) +
@@ -345,20 +344,12 @@ export function generateConflictFreeSchedule(params: {
             (classDayUsage.get(`${assignment.classGroupId}_${b.id}`) || 0) +
             (tempDayUsage.get(`${assignment.classGroupId}_${b.id}`) || 0);
 
-          const hasA = usageA > 0;
-          const hasB = usageB > 0;
-
-          // 1. Utamakan hari yang SUDAH memiliki jam pelajaran agar dipadatkan sampai penuh
-          if (hasA !== hasB) {
-            return hasA ? -1 : 1;
+          // 1. Hari dengan jam paling sedikit diisi duluan agar beban tiap hari berimbang dan sama rata
+          if (usageA !== usageB) {
+            return usageA - usageB;
           }
 
-          // 2. Jika sama-sama sudah terisi, prioritaskan hari yang memiliki jam terbanyak (hampir penuh)
-          if (hasA && hasB && usageA !== usageB) {
-            return usageB - usageA;
-          }
-
-          // 3. Jika sama-sama belum terisi (0 JP), pilih hari awal (Senin -> Selasa -> dst)
+          // 2. Jika beban jam sama, ikuti urutan hari sekolah (Senin -> Selasa -> dst)
           return a.dayNumber - b.dayNumber;
         });
 

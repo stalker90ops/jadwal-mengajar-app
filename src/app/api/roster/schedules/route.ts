@@ -168,6 +168,137 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === 'create_batch') {
+      const {
+        activeDayId,
+        timeSlotIds,
+        teacherId,
+        subjectId,
+        classGroupId,
+        roomId,
+        notes,
+        isLocked,
+        force,
+      } = data;
+
+      if (
+        !activeDayId ||
+        !Array.isArray(timeSlotIds) ||
+        timeSlotIds.length === 0 ||
+        !teacherId ||
+        !subjectId ||
+        !classGroupId ||
+        !roomId
+      ) {
+        return NextResponse.json(
+          { error: 'Data Hari, Rentang Jam, Guru, Mapel, Kelas, atau Ruangan tidak lengkap.' },
+          { status: 400 }
+        );
+      }
+
+      const [activeDay, teacher, subject, classGroup, room, existingSchedules] =
+        await Promise.all([
+          prisma.activeDay.findUnique({
+            where: { id: activeDayId },
+            include: { timeSlots: true },
+          }),
+          prisma.teacher.findUnique({ where: { id: teacherId } }),
+          prisma.subject.findUnique({ where: { id: subjectId } }),
+          prisma.classGroup.findUnique({ where: { id: classGroupId } }),
+          prisma.room.findUnique({ where: { id: roomId } }),
+          getFullSchedules(),
+        ]);
+
+      if (!activeDay || !teacher || !subject || !classGroup || !room) {
+        return NextResponse.json(
+          { error: 'Entitas Master tidak ditemukan.' },
+          { status: 400 }
+        );
+      }
+
+      // Ambil hanya slot non-break dari timeSlotIds yang dikirimkan (otomatis skip istirahat)
+      const validSlots = activeDay.timeSlots
+        .filter(
+          (ts) =>
+            timeSlotIds.includes(ts.id) &&
+            !ts.isBreak &&
+            !['istirahat', 'ishoma', 'upacara', 'literasi'].some((k) =>
+              ts.label.toLowerCase().includes(k)
+            )
+        )
+        .sort((a, b) => a.periodNumber - b.periodNumber);
+
+      if (validSlots.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              'Tidak ada slot jam efektif mengajar pada rentang yang dipilih (semua merupakan waktu istirahat).',
+          },
+          { status: 400 }
+        );
+      }
+
+      const createdItems: any[] = [];
+      const allConflicts: any[] = [];
+
+      for (const slot of validSlots) {
+        const conflicts = validateScheduleCandidate({
+          candidate: {
+            activeDayId,
+            timeSlotId: slot.id,
+            teacherId,
+            subjectId,
+            classGroupId,
+            roomId,
+          },
+          existingSchedules: [...existingSchedules, ...createdItems],
+          activeDay,
+          timeSlot: slot,
+          teacher,
+          classGroup,
+          room,
+          subject,
+        });
+
+        const errorConflicts = conflicts.filter((c) => c.severity === 'ERROR');
+        allConflicts.push(...conflicts);
+
+        if (errorConflicts.length > 0 && !force) {
+          return NextResponse.json(
+            {
+              valid: false,
+              error: `Slot ${slot.label}: ${errorConflicts[0].message}`,
+              conflicts: allConflicts,
+            },
+            { status: 409 }
+          );
+        }
+
+        const item = await prisma.schedule.create({
+          data: {
+            activeDayId,
+            timeSlotId: slot.id,
+            teacherId,
+            subjectId,
+            classGroupId,
+            roomId,
+            notes: notes || null,
+            isLocked: Boolean(isLocked),
+          },
+        });
+        createdItems.push(item);
+      }
+
+      return NextResponse.json({
+        success: true,
+        valid: allConflicts.filter((c) => c.severity === 'ERROR').length === 0,
+        message: `Berhasil menambahkan ${createdItems.length} slot jadwal sekaligus.`,
+        createdCount: createdItems.length,
+        items: createdItems,
+        conflicts: allConflicts,
+      });
+    }
+
     if (action === 'toggle_lock') {
       const updated = await prisma.schedule.update({
         where: { id: data.id },

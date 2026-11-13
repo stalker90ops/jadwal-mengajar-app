@@ -78,6 +78,7 @@ export default function AdminScheduleDashboard() {
     id?: string;
     activeDayId: string;
     timeSlotId: string;
+    endSlotId: string;
     classGroupId: string;
     subjectId: string;
     teacherId: string;
@@ -88,6 +89,7 @@ export default function AdminScheduleDashboard() {
   }>({
     activeDayId: "",
     timeSlotId: "",
+    endSlotId: "",
     classGroupId: "",
     subjectId: "",
     teacherId: "",
@@ -894,6 +896,53 @@ export default function AdminScheduleDashboard() {
     [liveModalConflicts]
   );
 
+  // Kalkulasi rentang jam pelajaran yang dipilih di Modal Tambah Jadwal Manual
+  const selectedRangeSlots = useMemo(() => {
+    if (!showScheduleModal) return [];
+    const activeDay = activeDays.find((d) => d.id === scheduleForm.activeDayId);
+    if (!activeDay || !activeDay.timeSlots) return [];
+
+    const startSlot = activeDay.timeSlots.find((ts: any) => ts.id === scheduleForm.timeSlotId);
+    const endSlot = activeDay.timeSlots.find(
+      (ts: any) => ts.id === (scheduleForm.endSlotId || scheduleForm.timeSlotId)
+    );
+
+    if (!startSlot || !endSlot) return [];
+
+    const minPeriod = Math.min(startSlot.periodNumber, endSlot.periodNumber);
+    const maxPeriod = Math.max(startSlot.periodNumber, endSlot.periodNumber);
+
+    return activeDay.timeSlots
+      .filter((ts: any) => ts.periodNumber >= minPeriod && ts.periodNumber <= maxPeriod)
+      .sort((a: any, b: any) => a.periodNumber - b.periodNumber);
+  }, [
+    showScheduleModal,
+    scheduleForm.activeDayId,
+    scheduleForm.timeSlotId,
+    scheduleForm.endSlotId,
+    activeDays,
+  ]);
+
+  const effectiveRangeSlots = useMemo(() => {
+    return selectedRangeSlots.filter(
+      (ts: any) =>
+        !ts.isBreak &&
+        !['istirahat', 'ishoma', 'upacara', 'literasi'].some((k) =>
+          ts.label.toLowerCase().includes(k)
+        )
+    );
+  }, [selectedRangeSlots]);
+
+  const breakRangeSlots = useMemo(() => {
+    return selectedRangeSlots.filter(
+      (ts: any) =>
+        ts.isBreak ||
+        ['istirahat', 'ishoma', 'upacara', 'literasi'].some((k) =>
+          ts.label.toLowerCase().includes(k)
+        )
+    );
+  }, [selectedRangeSlots]);
+
   const openAddScheduleModal = (dayId?: string, slotId?: string) => {
     const defaultDay = dayId
       ? activeDays.find((d) => d.id === dayId)
@@ -922,6 +971,7 @@ export default function AdminScheduleDashboard() {
       id: undefined,
       activeDayId: defaultDay?.id || "",
       timeSlotId: defaultSlot?.id || "",
+      endSlotId: defaultSlot?.id || "",
       classGroupId: defaultClassId,
       subjectId: subjects[0]?.id || "",
       teacherId: defaultTeacherId,
@@ -938,6 +988,7 @@ export default function AdminScheduleDashboard() {
       id: item.id,
       activeDayId: item.activeDayId,
       timeSlotId: item.timeSlotId,
+      endSlotId: item.timeSlotId,
       classGroupId: item.classGroupId,
       subjectId: item.subjectId,
       teacherId: item.teacherId,
@@ -955,28 +1006,57 @@ export default function AdminScheduleDashboard() {
       showMessage("error", "Harap pilih Kelas, Mata Pelajaran, Guru, dan Ruangan terlebih dahulu.");
       return;
     }
+
+    // Jika mode tambah baru dan ada rentang jam
+    if (!scheduleForm.id) {
+      if (effectiveRangeSlots.length === 0) {
+        showMessage("error", "Rentang jam yang dipilih hanya berisi waktu istirahat. Pilih rentang jam efektif mengajar.");
+        return;
+      }
+    }
+
     setBusyAction(true);
     try {
-      const action = scheduleForm.id ? "update" : "create";
+      const isBatch = !scheduleForm.id && effectiveRangeSlots.length > 0;
+      const action = scheduleForm.id ? "update" : isBatch ? "create_batch" : "create";
+
+      const payload = isBatch
+        ? {
+            action: "create_batch",
+            data: {
+              activeDayId: scheduleForm.activeDayId,
+              timeSlotIds: effectiveRangeSlots.map((ts: any) => ts.id),
+              classGroupId: scheduleForm.classGroupId,
+              subjectId: scheduleForm.subjectId,
+              teacherId: scheduleForm.teacherId,
+              roomId: scheduleForm.roomId,
+              notes: scheduleForm.notes,
+              isLocked: scheduleForm.isLocked,
+              force: scheduleForm.forceSave,
+            },
+          }
+        : {
+            action,
+            data: {
+              ...scheduleForm,
+              force: scheduleForm.forceSave,
+            },
+          };
+
       const res = await fetch("/api/roster/schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          data: {
-            ...scheduleForm,
-            force: scheduleForm.forceSave,
-          },
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (res.ok) {
         setShowScheduleModal(false);
         showMessage(
           data.valid ? "success" : "info",
-          data.valid
-            ? "Jadwal berhasil disimpan & tervalidasi bebas bentrok!"
-            : "Jadwal disimpan dengan catatan konflik bentrok."
+          data.message ||
+            (data.valid
+              ? "Jadwal berhasil disimpan & tervalidasi bebas bentrok!"
+              : "Jadwal disimpan dengan catatan konflik bentrok.")
         );
         await loadAllData();
       } else {
@@ -4075,6 +4155,7 @@ export default function AdminScheduleDashboard() {
                         ...scheduleForm,
                         activeDayId: e.target.value,
                         timeSlotId: firstTeachSlot?.id || "",
+                        endSlotId: firstTeachSlot?.id || "",
                       });
                     }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium"
@@ -4087,28 +4168,98 @@ export default function AdminScheduleDashboard() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Slot Jam Pelajaran *
-                  </label>
-                  <select
-                    required
-                    value={scheduleForm.timeSlotId}
-                    onChange={(e) =>
-                      setScheduleForm({ ...scheduleForm, timeSlotId: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium"
-                  >
-                    {(
-                      activeDays.find((d) => d.id === scheduleForm.activeDayId)?.timeSlots || []
-                    ).map((ts: any) => (
-                      <option key={ts.id} value={ts.id}>
-                        {ts.label} ({ts.startTime}-{ts.endTime}) {ts.isBreak ? "[ISTIRAHAT]" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {!scheduleForm.id ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Dari Jam Ke- *
+                      </label>
+                      <select
+                        required
+                        value={scheduleForm.timeSlotId}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setScheduleForm({
+                            ...scheduleForm,
+                            timeSlotId: val,
+                            endSlotId: scheduleForm.endSlotId || val,
+                          });
+                        }}
+                        className="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-medium text-xs sm:text-sm"
+                      >
+                        {(
+                          activeDays.find((d) => d.id === scheduleForm.activeDayId)?.timeSlots || []
+                        ).map((ts: any) => (
+                          <option key={ts.id} value={ts.id}>
+                            {ts.label} ({ts.startTime}–{ts.endTime}) {ts.isBreak ? "[ISTIRAHAT]" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Sampai Jam Ke- *
+                      </label>
+                      <select
+                        required
+                        value={scheduleForm.endSlotId || scheduleForm.timeSlotId}
+                        onChange={(e) =>
+                          setScheduleForm({ ...scheduleForm, endSlotId: e.target.value })
+                        }
+                        className="w-full px-2.5 py-2 border border-slate-300 rounded-lg font-medium text-xs sm:text-sm"
+                      >
+                        {(
+                          activeDays.find((d) => d.id === scheduleForm.activeDayId)?.timeSlots || []
+                        ).map((ts: any) => (
+                          <option key={ts.id} value={ts.id}>
+                            {ts.label} ({ts.startTime}–{ts.endTime}) {ts.isBreak ? "[ISTIRAHAT]" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Slot Jam Pelajaran *
+                    </label>
+                    <select
+                      required
+                      value={scheduleForm.timeSlotId}
+                      onChange={(e) =>
+                        setScheduleForm({ ...scheduleForm, timeSlotId: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium"
+                    >
+                      {(
+                        activeDays.find((d) => d.id === scheduleForm.activeDayId)?.timeSlots || []
+                      ).map((ts: any) => (
+                        <option key={ts.id} value={ts.id}>
+                          {ts.label} ({ts.startTime}-{ts.endTime}) {ts.isBreak ? "[ISTIRAHAT]" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
+
+              {/* Ringkasan Rentang Jam Pelajaran & Info Istirahat */}
+              {!scheduleForm.id && (
+                <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-1.5 text-xs">
+                  <div className="font-bold text-blue-900 flex items-center justify-between">
+                    <span>🕒 Total Terjadwal: {effectiveRangeSlots.length} JP</span>
+                    <span className="text-[11px] font-semibold text-blue-700">
+                      {effectiveRangeSlots.map((s: any) => s.label).join(", ") || "Tidak ada slot"}
+                    </span>
+                  </div>
+                  {breakRangeSlots.length > 0 && (
+                    <div className="text-[11px] text-amber-900 bg-amber-100/90 px-2 py-1 rounded-lg border border-amber-200 font-medium">
+                      ☕ <strong>{breakRangeSlots.map((b: any) => b.label).join(", ")}</strong> otomatis dilewati dan tidak diisi pelajaran.
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3.5">
                 <div>
