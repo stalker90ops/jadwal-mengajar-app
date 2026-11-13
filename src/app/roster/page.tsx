@@ -1563,6 +1563,21 @@ export default function AdminScheduleDashboard() {
     return map;
   }, [audit.conflicts]);
 
+  // Set Hari dan Jam yang memiliki jadwal bentrok untuk memberi aksen merah pada label tabel/header
+  const { conflictingDayIds, conflictingPeriodNumbers } = useMemo(() => {
+    const days = new Set<string>();
+    const periods = new Set<number>();
+    for (const item of schedules) {
+      if (conflictingScheduleIdSet.has(item.id)) {
+        days.add(item.activeDayId);
+        if (item.timeSlot?.periodNumber) {
+          periods.add(item.timeSlot.periodNumber);
+        }
+      }
+    }
+    return { conflictingDayIds: days, conflictingPeriodNumbers: periods };
+  }, [schedules, conflictingScheduleIdSet]);
+
   // State Drag and Drop Jadwal Mengajar
   const [draggedScheduleId, setDraggedScheduleId] = useState<string | null>(null);
   const [dragOverCellKey, setDragOverCellKey] = useState<string | null>(null);
@@ -1597,6 +1612,23 @@ export default function AdminScheduleDashboard() {
     if (!currentSchedule) return;
 
     if (currentSchedule.activeDayId === targetDayId && currentSchedule.timeSlotId === targetTimeSlotId) {
+      return;
+    }
+
+    // 1. Cek apakah slot tujuan sudah terisi jadwal lain untuk rombel ini (Cegah Drop)
+    const existingInTarget = schedules.find(
+      (s) =>
+        s.activeDayId === targetDayId &&
+        s.timeSlotId === targetTimeSlotId &&
+        s.classGroupId === currentSchedule.classGroupId &&
+        s.id !== currentSchedule.id
+    );
+
+    if (existingInTarget) {
+      showMessage(
+        "info",
+        `Slot tujuan sudah terisi oleh "${existingInTarget.subject?.name || "Pelajaran Lain"}" (${existingInTarget.teacher?.name || "Guru"}). Silakan pilih slot yang masih kosong.`
+      );
       return;
     }
 
@@ -2048,14 +2080,24 @@ export default function AdminScheduleDashboard() {
                         const isTeacherOff =
                           filteredTeacher &&
                           !parseJsonNumberArray(filteredTeacher.activeDays).includes(day.dayNumber);
+                        const hasConflictInDay = conflictingDayIds.has(day.id);
 
                         return (
                           <th
                             key={day.id}
-                            className="py-3.5 px-4 text-left font-semibold border-r border-slate-800 min-w-[220px]"
+                            className={`py-3.5 px-4 text-left font-semibold border-r border-slate-800 min-w-[220px] transition-colors ${
+                              hasConflictInDay ? "bg-red-950/90 text-red-200 border-red-500" : ""
+                            }`}
                           >
                             <div className="flex items-center justify-between">
-                              <span>{day.dayName}</span>
+                              <span className="flex items-center gap-1.5">
+                                <span>{day.dayName}</span>
+                                {hasConflictInDay && (
+                                  <span className="text-[10px] bg-red-600 text-white font-bold px-1.5 py-0.5 rounded shadow-sm">
+                                    ⚠️ Ada Bentrok
+                                  </span>
+                                )}
+                              </span>
                               {isTeacherOff && (
                                 <span className="text-[10px] bg-red-500/30 text-red-200 border border-red-400/40 px-2 py-0.5 rounded">
                                   Hari Non-Aktif Guru
@@ -2068,14 +2110,31 @@ export default function AdminScheduleDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {allPeriodRows.map((row) => (
+                    {allPeriodRows.map((row) => {
+                      const hasConflictInPeriod = conflictingPeriodNumbers.has(row.periodNumber);
+                      return (
                       <tr
                         key={row.periodNumber}
                         className={row.isBreak ? "bg-amber-50/70" : "hover:bg-slate-50/50"}
                       >
-                        <td className="py-3 px-4 border-r border-slate-200 align-top bg-slate-50">
-                          <div className="font-bold text-slate-800">{row.label}</div>
-                          <div className="text-xs text-slate-500 mt-0.5">
+                        <td
+                          className={`py-3 px-4 border-r border-slate-200 align-top transition-colors ${
+                            hasConflictInPeriod
+                              ? "bg-red-50/90 border-r-4 border-r-red-500"
+                              : "bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className={`font-bold ${hasConflictInPeriod ? "text-red-900" : "text-slate-800"}`}>
+                              {row.label}
+                            </span>
+                            {hasConflictInPeriod && (
+                              <span className="text-[9px] font-bold bg-red-200 text-red-900 px-1 py-0.5 rounded">
+                                Bentrok
+                              </span>
+                            )}
+                          </div>
+                          <div className={`text-xs mt-0.5 ${hasConflictInPeriod ? "text-red-700 font-medium" : "text-slate-500"}`}>
                             {row.startTime} - {row.endTime}
                           </div>
                         </td>
@@ -2133,15 +2192,29 @@ export default function AdminScheduleDashboard() {
                                   return (
                                     <div
                                       key={item.id}
-                                      draggable={true}
-                                      onDragStart={(e) => handleDragStart(e, item)}
-                                      title="💡 Tahan & Drag kartu ini untuk memindahkan jadwal ke slot atau hari lain"
-                                      className={`p-2.5 rounded-xl border shadow-sm transition-all cursor-grab active:cursor-grabbing select-none ${
+                                      draggable={!item.isLocked}
+                                      onDragStart={(e) => {
+                                        if (item.isLocked) {
+                                          e.preventDefault();
+                                          return;
+                                        }
+                                        handleDragStart(e, item);
+                                      }}
+                                      title={
+                                        item.isLocked
+                                          ? "🔒 Jadwal ini TERKUNCI. Buka kunci terlebih dahulu untuk menggeser."
+                                          : "💡 Tahan & Drag kartu ini untuk memindahkan jadwal ke slot atau hari lain"
+                                      }
+                                      className={`p-2.5 rounded-xl border shadow-sm transition-all select-none ${
+                                        item.isLocked
+                                          ? "cursor-not-allowed border-amber-300 bg-amber-50/20"
+                                          : "cursor-grab active:cursor-grabbing hover:border-blue-400 hover:shadow-md"
+                                      } ${
                                         isBeingDragged
                                           ? "opacity-30 scale-95 border-dashed border-blue-400"
                                           : isConflicting
                                           ? "bg-red-50/95 border-red-500 ring-2 ring-red-400 shadow-red-100"
-                                          : "bg-white border-slate-200 hover:border-blue-400 hover:shadow-md"
+                                          : "bg-white border-slate-200"
                                       }`}
                                       style={{
                                         borderLeftWidth: "6px",
@@ -2263,7 +2336,8 @@ export default function AdminScheduleDashboard() {
                           );
                         })}
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>
