@@ -923,29 +923,38 @@ export default function AdminScheduleDashboard() {
   };
 
   const handleDeleteSchedule = async (id: string) => {
-    setBusyAction(true);
+    // Optimistic delete
+    setSchedules((prev) => prev.filter((s) => s.id !== id));
     try {
       await fetch("/api/roster/schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", data: { id } }),
       });
+    } catch (e) {
+      console.error(e);
       await loadAllData();
-    } finally {
-      setBusyAction(false);
     }
   };
 
   const handleToggleLockSchedule = async (item: any) => {
-    await fetch("/api/roster/schedules", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "toggle_lock",
-        data: { id: item.id, isLocked: !item.isLocked },
-      }),
-    });
-    await loadAllData();
+    // Optimistic toggle lock
+    setSchedules((prev) =>
+      prev.map((s) => (s.id === item.id ? { ...s, isLocked: !s.isLocked } : s))
+    );
+    try {
+      await fetch("/api/roster/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "toggle_lock",
+          data: { id: item.id, isLocked: !item.isLocked },
+        }),
+      });
+    } catch (e) {
+      console.error(e);
+      await loadAllData();
+    }
   };
 
   // ==================== CRUD MASTER DATA ====================
@@ -967,7 +976,7 @@ export default function AdminScheduleDashboard() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.item) {
         setTeacherForm({
           code: "",
           nip: "",
@@ -976,8 +985,13 @@ export default function AdminScheduleDashboard() {
           maxPeriods: 24,
           activeDays: [1, 2, 3, 4, 5],
         });
+        setTeachers((prev) => {
+          const exists = prev.some((t) => t.id === data.item.id);
+          return exists
+            ? prev.map((t) => (t.id === data.item.id ? data.item : t))
+            : [...prev, data.item].sort((a, b) => a.code.localeCompare(b.code));
+        });
         showMessage("success", "Data guru & hari keaktifan berhasil disimpan.");
-        await loadAllData();
       } else {
         showMessage("error", data.error || "Gagal menyimpan guru");
       }
@@ -1000,7 +1014,7 @@ export default function AdminScheduleDashboard() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.item) {
         setSubjectForm({
           code: "",
           name: "",
@@ -1008,8 +1022,13 @@ export default function AdminScheduleDashboard() {
           color: "#2563eb",
           requiresLab: false,
         });
+        setSubjects((prev) => {
+          const exists = prev.some((s) => s.id === data.item.id);
+          return exists
+            ? prev.map((s) => (s.id === data.item.id ? data.item : s))
+            : [...prev, data.item].sort((a, b) => a.code.localeCompare(b.code));
+        });
         showMessage("success", "Data mata pelajaran berhasil disimpan.");
-        await loadAllData();
       } else {
         showMessage("error", data.error || "Gagal menyimpan mata pelajaran");
       }
@@ -1032,10 +1051,15 @@ export default function AdminScheduleDashboard() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.item) {
         setRoomForm({ code: "", name: "", type: "TEORI", capacity: 36 });
+        setRooms((prev) => {
+          const exists = prev.some((r) => r.id === data.item.id);
+          return exists
+            ? prev.map((r) => (r.id === data.item.id ? data.item : r))
+            : [...prev, data.item].sort((a, b) => a.code.localeCompare(b.code));
+        });
         showMessage("success", "Data ruangan berhasil disimpan.");
-        await loadAllData();
       } else {
         showMessage("error", data.error || "Gagal menyimpan ruangan");
       }
@@ -1058,10 +1082,15 @@ export default function AdminScheduleDashboard() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.item) {
         setClassForm({ code: "", name: "", grade: "X", defaultRoomId: "" });
+        setClasses((prev) => {
+          const exists = prev.some((c) => c.id === data.item.id);
+          return exists
+            ? prev.map((c) => (c.id === data.item.id ? data.item : c))
+            : [...prev, data.item].sort((a, b) => a.code.localeCompare(b.code));
+        });
         showMessage("success", "Data kelas/rombel berhasil disimpan.");
-        await loadAllData();
       } else {
         showMessage("error", data.error || "Gagal menyimpan kelas");
       }
@@ -1088,7 +1117,7 @@ export default function AdminScheduleDashboard() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.item) {
         setAssignmentForm({
           id: undefined,
           teacherId: "",
@@ -1099,8 +1128,13 @@ export default function AdminScheduleDashboard() {
           maxPerDay: 2,
           notes: "",
         });
+        setAssignments((prev) => {
+          const exists = prev.some((a) => a.id === data.item.id);
+          return exists
+            ? prev.map((a) => (a.id === data.item.id ? data.item : a))
+            : [data.item, ...prev];
+        });
         showMessage("success", "Alokasi beban mengajar berhasil disimpan.");
-        await loadAllData();
       } else {
         showMessage("error", data.error || "Gagal menyimpan beban mengajar");
       }
@@ -1112,12 +1146,21 @@ export default function AdminScheduleDashboard() {
   const handleDeleteEntity = async (entity: string, id: string) => {
     if (!confirm("Yakin ingin menghapus data ini?")) return;
     setBusyAction(true);
+    // Optimistic state removal
+    if (entity === "teacher") setTeachers((prev) => prev.filter((t) => t.id !== id));
+    else if (entity === "subject") setSubjects((prev) => prev.filter((s) => s.id !== id));
+    else if (entity === "room") setRooms((prev) => prev.filter((r) => r.id !== id));
+    else if (entity === "class") setClasses((prev) => prev.filter((c) => c.id !== id));
+    else if (entity === "assignment") setAssignments((prev) => prev.filter((a) => a.id !== id));
+
     try {
       await fetch("/api/master", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entity, action: "delete", data: { id } }),
       });
+    } catch (e) {
+      console.error(e);
       await loadAllData();
     } finally {
       setBusyAction(false);
@@ -1132,6 +1175,7 @@ export default function AdminScheduleDashboard() {
     )
       return;
     setBusyAction(true);
+    setAssignments([]);
     try {
       const res = await fetch("/api/master", {
         method: "POST",
@@ -1141,9 +1185,9 @@ export default function AdminScheduleDashboard() {
       const data = await res.json();
       if (res.ok) {
         showMessage("success", data.message || "Seluruh beban mengajar berhasil dikosongkan.");
-        await loadAllData();
       } else {
         showMessage("error", data.error || "Gagal mengosongkan beban mengajar");
+        await loadAllData();
       }
     } finally {
       setBusyAction(false);
@@ -1304,6 +1348,7 @@ export default function AdminScheduleDashboard() {
   );
 
   const allPeriodRows = useMemo(() => {
+    if (activeTab !== "schedule" && activeTab !== "days") return [];
     const map = new Map<
       number,
       { periodNumber: number; label: string; startTime: string; endTime: string; isBreak: boolean }
@@ -1322,9 +1367,10 @@ export default function AdminScheduleDashboard() {
       }
     }
     return Array.from(map.values()).sort((a, b) => a.periodNumber - b.periodNumber);
-  }, [schoolActiveDays]);
+  }, [schoolActiveDays, activeTab]);
 
   const filteredGridSchedules = useMemo(() => {
+    if (activeTab !== "schedule") return [];
     if (gridFilterMode === "CLASS" && gridFilterId) {
       return schedules.filter((s) => s.classGroupId === gridFilterId);
     }
@@ -1335,7 +1381,45 @@ export default function AdminScheduleDashboard() {
       return schedules.filter((s) => s.roomId === gridFilterId);
     }
     return schedules;
-  }, [schedules, gridFilterMode, gridFilterId]);
+  }, [schedules, gridFilterMode, gridFilterId, activeTab]);
+
+  const gridSchedulesByCell = useMemo(() => {
+    if (activeTab !== "schedule") return new Map<string, any[]>();
+    const map = new Map<string, any[]>();
+    for (const s of filteredGridSchedules) {
+      const key = `${s.activeDayId}_${s.timeSlotId}`;
+      const list = map.get(key);
+      if (list) {
+        list.push(s);
+      } else {
+        map.set(key, [s]);
+      }
+    }
+    return map;
+  }, [filteredGridSchedules, activeTab]);
+
+  const teacherScheduledCountMap = useMemo(() => {
+    if (activeTab !== "teachers") return new Map<string, number>();
+    const map = new Map<string, number>();
+    for (const s of schedules) {
+      if (s.teacherId) {
+        map.set(s.teacherId, (map.get(s.teacherId) || 0) + 1);
+      }
+    }
+    return map;
+  }, [schedules, activeTab]);
+
+  const assignmentScheduledCountMap = useMemo(() => {
+    if (activeTab !== "assignments") return new Map<string, number>();
+    const map = new Map<string, number>();
+    for (const s of schedules) {
+      if (s.classGroupId && s.subjectId) {
+        const key = `${s.classGroupId}_${s.subjectId}_${s.teacherId || ""}`;
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    }
+    return map;
+  }, [schedules, activeTab]);
 
   const totalTargetJP = useMemo(
     () => assignments.reduce((acc, a) => acc + (a.totalPeriods || 0), 0),
@@ -1343,16 +1427,16 @@ export default function AdminScheduleDashboard() {
   );
 
   const selectedClassObj = useMemo(
-    () => classes.find((c) => c.id === assignmentFilterClass),
-    [classes, assignmentFilterClass]
+    () => (activeTab === "assignments" ? classes.find((c) => c.id === assignmentFilterClass) : undefined),
+    [classes, assignmentFilterClass, activeTab]
   );
 
   const selectedClassTotalJP = useMemo(() => {
-    if (!assignmentFilterClass) return 0;
+    if (activeTab !== "assignments" || !assignmentFilterClass) return 0;
     return assignments
       .filter((a) => a.classGroupId === assignmentFilterClass)
       .reduce((acc, a) => acc + (a.totalPeriods || 0), 0);
-  }, [assignments, assignmentFilterClass]);
+  }, [assignments, assignmentFilterClass, activeTab]);
 
   const teacherOptions = useMemo(
     () =>
@@ -1365,7 +1449,7 @@ export default function AdminScheduleDashboard() {
   );
 
   const filteredAssignments = useMemo(() => {
-    if (!assignmentFilterClass) return [];
+    if (activeTab !== "assignments" || !assignmentFilterClass) return [];
     return assignments.filter((a) => {
       // HANYA tampilkan beban mengajar untuk kelas yang sedang dipilih
       if (a.classGroupId !== assignmentFilterClass) {
@@ -1394,7 +1478,12 @@ export default function AdminScheduleDashboard() {
       }
       return true;
     });
-  }, [assignments, assignmentFilterClass, assignmentFilterTeacherStatus, assignmentSearch]);
+  }, [assignments, assignmentFilterClass, assignmentFilterTeacherStatus, assignmentSearch, activeTab]);
+
+  const conflictingScheduleIdSet = useMemo(
+    () => new Set(audit.conflictingScheduleIds || []),
+    [audit.conflictingScheduleIds]
+  );
 
   const errorConflictList = useMemo(
     () => audit.conflicts.filter((c) => c.severity === "ERROR"),
@@ -1854,17 +1943,14 @@ export default function AdminScheduleDashboard() {
                             );
                           }
 
-                          const cellSchedules = filteredGridSchedules.filter(
-                            (s) => s.activeDayId === day.id && s.timeSlotId === daySlot.id
-                          );
+                          const cellSchedules =
+                            gridSchedulesByCell.get(`${day.id}_${daySlot.id}`) || [];
 
                           return (
                             <td key={day.id} className="p-2.5 border-r border-slate-200 align-top">
                               <div className="space-y-2">
                                 {cellSchedules.map((item) => {
-                                  const isConflicting = audit.conflictingScheduleIds.includes(
-                                    item.id
-                                  );
+                                  const isConflicting = conflictingScheduleIdSet.has(item.id);
                                   return (
                                     <div
                                       key={item.id}
@@ -2353,7 +2439,7 @@ export default function AdminScheduleDashboard() {
                 <tbody className="divide-y divide-slate-200">
                   {teachers.map((t) => {
                     const days = parseJsonNumberArray(t.activeDays);
-                    const scheduledCount = schedules.filter((s) => s.teacherId === t.id).length;
+                    const scheduledCount = teacherScheduledCountMap.get(t.id) || 0;
                     return (
                       <tr key={t.id} className="hover:bg-slate-50">
                         <td className="py-3 px-4 font-bold text-blue-700">{t.code}</td>
@@ -3477,12 +3563,8 @@ export default function AdminScheduleDashboard() {
                     </tr>
                   ) : (
                     filteredAssignments.map((a) => {
-                      const scheduledCount = schedules.filter(
-                        (s) =>
-                          s.teacherId === a.teacherId &&
-                          s.subjectId === a.subjectId &&
-                          s.classGroupId === a.classGroupId
-                      ).length;
+                      const assignKey = `${a.classGroupId}_${a.subjectId}_${a.teacherId || ""}`;
+                      const scheduledCount = assignmentScheduledCountMap.get(assignKey) || 0;
                       const complete = scheduledCount >= a.totalPeriods;
 
                       return (

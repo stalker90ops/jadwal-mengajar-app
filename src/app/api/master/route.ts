@@ -4,9 +4,14 @@ import { ensureDefaultActiveDays, seedSampleSchoolData, DEFAULT_TIME_SLOTS, FRID
 import { auditAllSchedules, ScheduleWithRelations } from '@/lib/schedule-validator';
 import { parseActiveDaysInput } from '@/lib/csv-helper';
 
+let hasEnsuredActiveDays = false;
+
 export async function GET() {
   try {
-    await ensureDefaultActiveDays();
+    if (!hasEnsuredActiveDays) {
+      await ensureDefaultActiveDays();
+      hasEnsuredActiveDays = true;
+    }
 
     const [activeDays, teachers, subjects, rooms, classes, assignments, schedules, curriculumStandards] = await Promise.all([
       prisma.activeDay.findMany({
@@ -66,17 +71,24 @@ export async function GET() {
 
     const audit = auditAllSchedules(schedules as unknown as ScheduleWithRelations[]);
 
-    return NextResponse.json({
-      activeDays,
-      teachers,
-      subjects,
-      rooms,
-      classes,
-      assignments,
-      schedules,
-      curriculumStandards,
-      audit,
-    });
+    return NextResponse.json(
+      {
+        activeDays,
+        teachers,
+        subjects,
+        rooms,
+        classes,
+        assignments,
+        schedules,
+        curriculumStandards,
+        audit,
+      },
+      {
+        headers: {
+          'Cache-Control': 'private, no-cache, stale-while-revalidate=15',
+        },
+      }
+    );
   } catch (error) {
     console.error('Error fetching master data:', error);
     return NextResponse.json({ error: 'Gagal memuat data master' }, { status: 500 });
@@ -504,6 +516,11 @@ export async function POST(request: Request) {
             preferredRoomId: data.preferredRoomId || null,
             notes: data.notes || null,
           },
+          include: {
+            teacher: true,
+            subject: true,
+            classGroup: true,
+          },
         });
         return NextResponse.json({ success: true, item });
       }
@@ -519,6 +536,11 @@ export async function POST(request: Request) {
             maxPerDay: Number(data.maxPerDay) || 2,
             preferredRoomId: data.preferredRoomId || null,
             notes: data.notes || null,
+          },
+          include: {
+            teacher: true,
+            subject: true,
+            classGroup: true,
           },
         });
         return NextResponse.json({ success: true, item: updated });

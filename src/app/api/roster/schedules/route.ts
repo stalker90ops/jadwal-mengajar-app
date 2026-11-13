@@ -29,7 +29,14 @@ export async function GET() {
   try {
     const schedules = await getFullSchedules();
     const audit = auditAllSchedules(schedules);
-    return NextResponse.json({ schedules, audit });
+    return NextResponse.json(
+      { schedules, audit },
+      {
+        headers: {
+          'Cache-Control': 'private, no-cache, stale-while-revalidate=15',
+        },
+      }
+    );
   } catch (error) {
     console.error('Error fetching schedules:', error);
     return NextResponse.json({ error: 'Gagal memuat jadwal' }, { status: 500 });

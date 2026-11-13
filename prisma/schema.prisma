@@ -127,6 +127,7 @@ model TeachingAssignment {
 
   // Diizinkan multi-guru per mapel per kelas (misal tim teaching kejuruan 1-4 guru)
   @@index([classGroupId, subjectId])
+  @@index([teacherId])
 }
 
 // Item Jadwal Mengajar
@@ -148,4 +149,9 @@ model Schedule {
   isLocked     Boolean    @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+
+  @@index([classGroupId])
+  @@index([teacherId])
+  @@index([roomId])
+  @@index([activeDayId, timeSlotId])
 }
