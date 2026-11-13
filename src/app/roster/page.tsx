@@ -199,8 +199,8 @@ export default function AdminScheduleDashboard() {
   // State Matriks Standar Kurikulum { [subjectId_grade]: { totalPeriods, maxPerDay } }
   const [standardInputs, setStandardInputs] = useState<Record<string, { totalPeriods: number; maxPerDay: number }>>({});
 
-  // Filter & Search Beban Mengajar
-  const [assignmentFilterClass, setAssignmentFilterClass] = useState<string>("ALL");
+  // Filter & Search Beban Mengajar (Hanya Tampilkan Kelas yang Dipilih untuk Menghemat Memori)
+  const [assignmentFilterClass, setAssignmentFilterClass] = useState<string>("");
   const [assignmentFilterTeacherStatus, setAssignmentFilterTeacherStatus] = useState<string>("ALL");
   const [assignmentSearch, setAssignmentSearch] = useState<string>("");
 
@@ -552,6 +552,10 @@ export default function AdminScheduleDashboard() {
         if (!gridFilterId && data.classes?.length > 0) {
           setGridFilterId(data.classes[0].id);
         }
+        if (!assignmentFilterClass && data.classes?.length > 0) {
+          setAssignmentFilterClass(data.classes[0].id);
+          setAssignmentForm((prev) => ({ ...prev, classGroupId: data.classes[0].id }));
+        }
         if (!selectedDayForSlot && data.activeDays?.length > 0) {
           setSelectedDayForSlot(data.activeDays[0].id);
         }
@@ -577,7 +581,12 @@ export default function AdminScheduleDashboard() {
         setGridFilterId(rooms[0].id);
       }
     }
-  }, [gridFilterMode, classes, teachers, rooms, gridFilterId]);
+    // Set default kelas yang dipilih di Beban Mengajar jika belum ada
+    if (classes.length > 0 && (!assignmentFilterClass || !classes.some((c) => c.id === assignmentFilterClass))) {
+      setAssignmentFilterClass(classes[0].id);
+      setAssignmentForm((prev) => ({ ...prev, classGroupId: classes[0].id }));
+    }
+  }, [gridFilterMode, classes, teachers, rooms, gridFilterId, assignmentFilterClass]);
 
   const showMessage = (type: "success" | "error" | "info", text: string) => {
     setBanner({ type, text });
@@ -1329,9 +1338,23 @@ export default function AdminScheduleDashboard() {
     [assignments]
   );
 
+  const selectedClassObj = useMemo(
+    () => classes.find((c) => c.id === assignmentFilterClass),
+    [classes, assignmentFilterClass]
+  );
+
+  const selectedClassTotalJP = useMemo(() => {
+    if (!assignmentFilterClass) return 0;
+    return assignments
+      .filter((a) => a.classGroupId === assignmentFilterClass)
+      .reduce((acc, a) => acc + (a.totalPeriods || 0), 0);
+  }, [assignments, assignmentFilterClass]);
+
   const filteredAssignments = useMemo(() => {
+    if (!assignmentFilterClass) return [];
     return assignments.filter((a) => {
-      if (assignmentFilterClass !== "ALL" && a.classGroupId !== assignmentFilterClass) {
+      // HANYA tampilkan beban mengajar untuk kelas yang sedang dipilih
+      if (a.classGroupId !== assignmentFilterClass) {
         return false;
       }
       if (assignmentFilterTeacherStatus === "ASSIGNED" && !a.teacherId) {
@@ -1342,13 +1365,11 @@ export default function AdminScheduleDashboard() {
       }
       if (assignmentSearch.trim()) {
         const q = assignmentSearch.toLowerCase();
-        const clsName = a.classGroup?.name?.toLowerCase() || "";
         const subName = a.subject?.name?.toLowerCase() || "";
         const subCode = a.subject?.code?.toLowerCase() || "";
         const teaName = a.teacher?.name?.toLowerCase() || "";
         const notes = a.notes?.toLowerCase() || "";
         if (
-          !clsName.includes(q) &&
           !subName.includes(q) &&
           !subCode.includes(q) &&
           !teaName.includes(q) &&
@@ -3285,13 +3306,21 @@ export default function AdminScheduleDashboard() {
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
             <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
-                <h3 className="font-bold text-slate-900">
-                  Daftar Alokasi Tugas Mengajar ({assignments.length} Item — Total {totalTargetJP} JP)
+                <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                  <span>Beban Mengajar:</span>
+                  {selectedClassObj ? (
+                    <span className="text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-lg border border-blue-200 text-sm">
+                      {selectedClassObj.name} ({selectedClassObj.code})
+                    </span>
+                  ) : (
+                    <span className="text-slate-500 text-sm">Pilih Kelas</span>
+                  )}
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Guru dapat dipilih langsung melalui menu dropdown di setiap baris tabel.
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Menampilkan {filteredAssignments.length} mata pelajaran ({selectedClassTotalJP} JP) khusus rombel ini untuk menghemat memori & performa.
                 </p>
               </div>
+
               <div className="flex items-center gap-2">
                 {assignments.length > 0 && (
                   <button
@@ -3315,54 +3344,92 @@ export default function AdminScheduleDashboard() {
               </div>
             </div>
 
-            {/* Filter & Pencarian Cepat */}
+            {/* Filter & Pemilihan Kelas */}
             <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-2.5 items-center text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-slate-600">Filter Kelas:</span>
-                <select
-                  value={assignmentFilterClass}
-                  onChange={(e) => setAssignmentFilterClass(e.target.value)}
-                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                >
-                  <option value="ALL">Semua Kelas ({classes.length})</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex items-center gap-1.5 min-w-[250px]">
+                <span className="font-semibold text-slate-700 shrink-0">Pilih Kelas:</span>
+                <div className="flex-1">
+                  <SearchableSelect
+                    options={classes.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                      badge: c.grade,
+                      subLabel: c.code,
+                    }))}
+                    value={assignmentFilterClass}
+                    onChange={(val) => {
+                      setAssignmentFilterClass(val);
+                      setAssignmentForm((prev) => ({ ...prev, classGroupId: val }));
+                    }}
+                    placeholder="-- Pilih Kelas --"
+                    searchPlaceholder="Cari rombel..."
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              {/* Navigasi Cepat Prev / Next Kelas */}
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  title="Kelas Sebelumnya"
+                  disabled={classes.findIndex((c) => c.id === assignmentFilterClass) <= 0}
+                  onClick={() => {
+                    const idx = classes.findIndex((c) => c.id === assignmentFilterClass);
+                    if (idx > 0) {
+                      const prevId = classes[idx - 1].id;
+                      setAssignmentFilterClass(prevId);
+                      setAssignmentForm((prev) => ({ ...prev, classGroupId: prevId }));
+                    }
+                  }}
+                  className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-semibold transition-colors"
+                >
+                  &larr; Prev
+                </button>
+                <button
+                  type="button"
+                  title="Kelas Berikutnya"
+                  disabled={classes.findIndex((c) => c.id === assignmentFilterClass) >= classes.length - 1}
+                  onClick={() => {
+                    const idx = classes.findIndex((c) => c.id === assignmentFilterClass);
+                    if (idx >= 0 && idx < classes.length - 1) {
+                      const nextId = classes[idx + 1].id;
+                      setAssignmentFilterClass(nextId);
+                      setAssignmentForm((prev) => ({ ...prev, classGroupId: nextId }));
+                    }
+                  }}
+                  className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-semibold transition-colors"
+                >
+                  Next &rarr;
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 ml-auto">
                 <span className="font-semibold text-slate-600">Status Guru:</span>
                 <select
                   value={assignmentFilterTeacherStatus}
                   onChange={(e) => setAssignmentFilterTeacherStatus(e.target.value)}
                   className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
                 >
-                  <option value="ALL">Semua Status</option>
+                  <option value="ALL">Semua Guru</option>
                   <option value="ASSIGNED">Sudah Ada Guru</option>
                   <option value="UNASSIGNED">Belum Ada Guru (TBD)</option>
                 </select>
               </div>
 
-              <div className="flex-1 min-w-[180px]">
+              <div className="w-48">
                 <input
                   type="text"
-                  placeholder="Cari mapel, guru, rombel..."
+                  placeholder="Cari mapel / guru..."
                   value={assignmentSearch}
                   onChange={(e) => setAssignmentSearch(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
                 />
               </div>
 
-              {(assignmentFilterClass !== "ALL" ||
-                assignmentFilterTeacherStatus !== "ALL" ||
-                assignmentSearch) && (
+              {(assignmentFilterTeacherStatus !== "ALL" || assignmentSearch) && (
                 <button
                   type="button"
                   onClick={() => {
-                    setAssignmentFilterClass("ALL");
                     setAssignmentFilterTeacherStatus("ALL");
                     setAssignmentSearch("");
                   }}
@@ -3388,8 +3455,10 @@ export default function AdminScheduleDashboard() {
                 <tbody className="divide-y divide-slate-200">
                   {filteredAssignments.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center py-8 text-slate-400 text-xs">
-                        Tidak ada alokasi beban mengajar yang cocok dengan filter.
+                      <td colSpan={6} className="text-center py-10 text-slate-400 text-xs">
+                        {assignmentFilterClass
+                          ? `Belum ada alokasi beban mengajar untuk ${selectedClassObj?.name || "kelas ini"}. Tambahkan mapel di formulir sebelah kiri atau terapkan standar dari Struktur Kurikulum.`
+                          : "Silakan pilih salah satu kelas di atas untuk melihat beban mengajar."}
                       </td>
                     </tr>
                   ) : (
