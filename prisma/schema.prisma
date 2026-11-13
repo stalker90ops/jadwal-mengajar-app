@@ -55,6 +55,7 @@ model Teacher {
   unavailableSlots String               @default("[]")
   assignments      TeachingAssignment[]
   schedules        Schedule[]
+  additionalDuties AdditionalDuty[]
   createdAt        DateTime             @default(now())
 }
 
@@ -157,3 +158,19 @@ model Schedule {
   @@index([roomId])
   @@index([activeDayId, timeSlotId])
 }
+
+// Tugas Tambahan Guru (Wakasek, Wali Kelas, Kepala Lab/Bengkel, Pembina OSIS, dll.)
+model AdditionalDuty {
+  id              String   @id @default(uuid())
+  name            String
+  equivalentHours Int      @default(2)
+  teacherId       String?
+  teacher         Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  nomorSk         String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([teacherId])
+}
+

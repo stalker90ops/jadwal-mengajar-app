@@ -22,6 +22,8 @@ import {
   ShieldAlert,
   X,
   Database,
+  Briefcase,
+  Award,
 } from "lucide-react";
 import {
   downloadCsvFile,
@@ -43,7 +45,8 @@ type TabKey =
   | "subjects"
   | "rooms_classes"
   | "days"
-  | "assignments";
+  | "assignments"
+  | "additional_duties";
 
 export default function AdminScheduleDashboard() {
   type MainTabKey = "kurikulum" | "referensi";
@@ -65,6 +68,7 @@ export default function AdminScheduleDashboard() {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
   const [curriculumStandards, setCurriculumStandards] = useState<any[]>([]);
+  const [additionalDuties, setAdditionalDuties] = useState<any[]>([]);
   const [audit, setAudit] = useState<{
     conflicts: ConflictDetail[];
     conflictingScheduleIds: string[];
@@ -210,6 +214,23 @@ export default function AdminScheduleDashboard() {
   const [assignmentFilterClass, setAssignmentFilterClass] = useState<string>("");
   const [assignmentFilterTeacherStatus, setAssignmentFilterTeacherStatus] = useState<string>("ALL");
   const [assignmentSearch, setAssignmentSearch] = useState<string>("");
+
+  // Form & Search Tugas Tambahan Guru
+  const [dutyForm, setDutyForm] = useState<{
+    id?: string;
+    name: string;
+    equivalentHours: number;
+    teacherId: string;
+    nomorSk: string;
+    notes: string;
+  }>({
+    name: "",
+    equivalentHours: 2,
+    teacherId: "",
+    nomorSk: "",
+    notes: "",
+  });
+  const [dutySearch, setDutySearch] = useState<string>("");
 
   // Modal Progress Operasi Interaktif (Auto-Generate, Import CSV, Terapkan Kurikulum)
   const [progressModal, setProgressModal] = useState<{
@@ -620,6 +641,7 @@ export default function AdminScheduleDashboard() {
         setAssignments(data.assignments || []);
         setSchedules(data.schedules || []);
         setCurriculumStandards(data.curriculumStandards || []);
+        setAdditionalDuties(data.additionalDuties || []);
         setAudit(data.audit || { conflicts: [], conflictingScheduleIds: [] });
 
         if (!gridFilterId && data.classes?.length > 0) {
@@ -1399,6 +1421,7 @@ export default function AdminScheduleDashboard() {
     else if (entity === "room") setRooms((prev) => prev.filter((r) => r.id !== id));
     else if (entity === "class") setClasses((prev) => prev.filter((c) => c.id !== id));
     else if (entity === "assignment") setAssignments((prev) => prev.filter((a) => a.id !== id));
+    else if (entity === "additional_duty") setAdditionalDuties((prev) => prev.filter((d) => d.id !== id));
 
     try {
       await fetch("/api/master", {
@@ -1441,6 +1464,125 @@ export default function AdminScheduleDashboard() {
     }
   };
 
+  const handleSaveDuty = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!dutyForm.name.trim()) {
+      showMessage("error", "Nama tugas tambahan wajib diisi.");
+      return;
+    }
+    setBusyAction(true);
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "additional_duty",
+          action: dutyForm.id ? "update" : "create",
+          data: dutyForm,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.item) {
+        setDutyForm({
+          name: "",
+          equivalentHours: 2,
+          teacherId: "",
+          nomorSk: "",
+          notes: "",
+        });
+        setAdditionalDuties((prev) => {
+          const exists = prev.some((d) => d.id === data.item.id);
+          return exists
+            ? prev.map((d) => (d.id === data.item.id ? data.item : d))
+            : [...prev, data.item].sort((a, b) => a.name.localeCompare(b.name));
+        });
+        showMessage("success", "Tugas tambahan berhasil disimpan.");
+      } else {
+        showMessage("error", data.error || "Gagal menyimpan tugas tambahan");
+      }
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const handleClearAllDuties = async () => {
+    if (
+      !confirm(
+        `Yakin ingin mengosongkan seluruh (${additionalDuties.length}) tugas tambahan guru? Tindakan ini tidak dapat dibatalkan.`
+      )
+    )
+      return;
+    setBusyAction(true);
+    setAdditionalDuties([]);
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entity: "additional_duty", action: "clear_all" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showMessage("success", data.message || "Seluruh tugas tambahan berhasil dikosongkan.");
+      } else {
+        showMessage("error", data.error || "Gagal mengosongkan tugas tambahan");
+        await loadAllData();
+      }
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const handleDownloadDutyTemplate = () => {
+    const headers = [
+      "Nama_Tugas",
+      "Ekuivalensi_JP",
+      "Kode_Guru",
+      "NIP",
+      "Nama_Guru",
+      "Nomor_SK",
+      "Keterangan",
+    ];
+    const sampleRows = [
+      [
+        "Wakil Kepala Sekolah Bidang Kurikulum",
+        "12",
+        teachers[0]?.code || "GR-01",
+        teachers[0]?.nip || "197501012000031001",
+        teachers[0]?.name || "Drs. H. Ahmad",
+        "800/01/SK-SMK/2026",
+        "SK Pembagian Tugas 2026/2027",
+      ],
+      [
+        "Wali Kelas X DKV A",
+        "2",
+        teachers[1]?.code || "GR-02",
+        teachers[1]?.nip || "198002022005012002",
+        teachers[1]?.name || "Siti Rahma, S.Pd",
+        "800/02/SK-SMK/2026",
+        "Wali Kelas X DKV A",
+      ],
+      [
+        "Kepala Lab Komputer & Jaringan",
+        "12",
+        teachers[2]?.code || "GR-03",
+        teachers[2]?.nip || "198503032008011003",
+        teachers[2]?.name || "Budi Santoso, S.Kom",
+        "800/03/SK-SMK/2026",
+        "Penanggung Jawab Bengkel TKJ",
+      ],
+      [
+        "Pembina OSIS",
+        "2",
+        teachers[3]?.code || "GR-04",
+        teachers[3]?.nip || "199004042014022004",
+        teachers[3]?.name || "Dewi Lestari, S.Pd",
+        "800/04/SK-SMK/2026",
+        "Bidang Kesiswaan",
+      ],
+    ];
+    downloadCsvFile("Template_Import_Tugas_Tambahan.csv", headers, sampleRows);
+  };
+
   // ==================== IMPORT CSV / EXCEL ====================
   const triggerImportFile = (entity: string) => {
     setImportTargetEntity(entity);
@@ -1462,6 +1604,7 @@ export default function AdminScheduleDashboard() {
       activeDay: "Hari & Jam Aktif",
       assignment: "Beban Mengajar",
       curriculum_standard: "Standar Kurikulum",
+      additional_duty: "Tugas Tambahan Guru",
     };
     const entityName = entityLabels[importTargetEntity] || importTargetEntity;
 
@@ -1655,6 +1798,43 @@ export default function AdminScheduleDashboard() {
     }
     return map;
   }, [schedules, activeTab]);
+
+  const teacherDutyHoursMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const d of additionalDuties) {
+      if (d.teacherId) {
+        const cur = map.get(d.teacherId) || 0;
+        map.set(d.teacherId, cur + (Number(d.equivalentHours) || 0));
+      }
+    }
+    return map;
+  }, [additionalDuties]);
+
+  const teacherDutiesMap = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const d of additionalDuties) {
+      if (d.teacherId) {
+        const list = map.get(d.teacherId) || [];
+        list.push(d);
+        map.set(d.teacherId, list);
+      }
+    }
+    return map;
+  }, [additionalDuties]);
+
+  const filteredDuties = useMemo(() => {
+    if (!dutySearch.trim()) return additionalDuties;
+    const q = dutySearch.toLowerCase();
+    return additionalDuties.filter((d) => {
+      const matchName = d.name?.toLowerCase().includes(q);
+      const matchTeacher =
+        d.teacher?.name?.toLowerCase().includes(q) ||
+        d.teacher?.code?.toLowerCase().includes(q);
+      const matchSk = d.nomorSk?.toLowerCase().includes(q);
+      const matchNotes = d.notes?.toLowerCase().includes(q);
+      return matchName || matchTeacher || matchSk || matchNotes;
+    });
+  }, [additionalDuties, dutySearch]);
 
   const totalTargetJP = useMemo(
     () => assignments.reduce((acc, a) => acc + (a.totalPeriods || 0), 0),
@@ -2000,7 +2180,7 @@ export default function AdminScheduleDashboard() {
             type="button"
             onClick={() => {
               setMainTab("kurikulum");
-              if (!["schedule", "curriculum", "assignments"].includes(activeTab)) {
+              if (!["schedule", "curriculum", "assignments", "additional_duties"].includes(activeTab)) {
                 setActiveTab("schedule");
               }
             }}
@@ -2021,7 +2201,7 @@ export default function AdminScheduleDashboard() {
                 )}
               </div>
               <p className="text-[10px] font-normal text-slate-400 mt-0.5 hidden sm:block">
-                Struktur Kurikulum (JP), Beban Mengajar, Tabel Mengajar & Validasi
+                Struktur Kurikulum (JP), Beban Mengajar, Tabel Mengajar & Tugas Tambahan
               </p>
             </div>
           </button>
@@ -2070,6 +2250,12 @@ export default function AdminScheduleDashboard() {
                   key: "assignments",
                   label: "Beban Mengajar (Alokasi JP)",
                   icon: Layers,
+                },
+                {
+                  key: "additional_duties",
+                  label: "Tugas Tambahan Guru",
+                  icon: Briefcase,
+                  badge: additionalDuties.length > 0 ? additionalDuties.length : undefined,
                 },
               ].map((tab) => {
                 const Icon = tab.icon;
@@ -3108,12 +3294,30 @@ export default function AdminScheduleDashboard() {
                   {teachers.map((t) => {
                     const days = parseJsonNumberArray(t.activeDays);
                     const scheduledCount = teacherScheduledCountMap.get(t.id) || 0;
+                    const dutyHours = teacherDutyHoursMap.get(t.id) || 0;
+                    const duties = teacherDutiesMap.get(t.id) || [];
+                    const totalWorkload = scheduledCount + dutyHours;
+                    const isOverload = totalWorkload > t.maxPeriods;
                     return (
                       <tr key={t.id} className="hover:bg-slate-50">
                         <td className="py-3 px-4 font-bold text-blue-700">{t.code}</td>
                         <td className="py-3 px-4">
                           <div className="font-semibold text-slate-900">{t.name}</div>
                           {t.nip && <div className="text-xs text-slate-500">NIP: {t.nip}</div>}
+                          {duties.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {duties.map((d: any) => (
+                                <span
+                                  key={d.id}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200"
+                                  title={`${d.name} (${d.equivalentHours} JP)`}
+                                >
+                                  <Briefcase className="w-2.5 h-2.5 text-amber-600" />
+                                  <span>{d.name} (+{d.equivalentHours} JP)</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex flex-wrap gap-1">
@@ -3134,8 +3338,23 @@ export default function AdminScheduleDashboard() {
                             })}
                           </div>
                         </td>
-                        <td className="py-3 px-4 font-semibold text-slate-700">
-                          {scheduledCount} / {t.maxPeriods} JP
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-800 text-sm">
+                            {totalWorkload} / {t.maxPeriods} JP
+                          </div>
+                          <div className="text-[11px] text-slate-500 space-x-1.5 mt-0.5">
+                            <span>Tatap Muka: <strong>{scheduledCount}</strong></span>
+                            {dutyHours > 0 && (
+                              <span className="text-amber-700 font-medium">
+                                • Tugas: <strong>+{dutyHours}</strong>
+                              </span>
+                            )}
+                          </div>
+                          {isOverload && (
+                            <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                              Overload (+{totalWorkload - t.maxPeriods} JP)
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-right space-x-2">
                           <button
@@ -4294,6 +4513,370 @@ export default function AdminScheduleDashboard() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== TAB 4: TUGAS TAMBAHAN GURU ==================== */}
+      {activeTab === "additional_duties" && (
+        <div className="space-y-6">
+          {/* Header Card & Tombol Aksi */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-amber-100 text-amber-800 rounded-xl">
+                  <Briefcase className="w-5 h-5" />
+                </span>
+                <h3 className="font-bold text-slate-900 text-lg">
+                  Tugas Tambahan Guru & Ekuivalensi Jam (JP)
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
+                Input dan kelola tugas tambahan guru (Wakasek, Wali Kelas, Kepala Bengkel/Lab, Pembina OSIS, dll.).
+                Ekuivalensi JP tugas tambahan otomatis diakumulasikan ke beban kerja mingguan guru.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadDutyTemplate}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all shadow-sm"
+              >
+                <Download className="w-4 h-4 text-slate-600" />
+                <span>Unduh Template CSV</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => triggerImportFile("additional_duty")}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition-all shadow-sm shadow-emerald-600/20"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Import CSV Tugas Tambahan</span>
+              </button>
+              {additionalDuties.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAllDuties}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-semibold transition-all border border-red-200"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Kosongkan</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Statistik Ringkasan Tugas Tambahan */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 font-medium">Total Tugas Tambahan</div>
+              <div className="text-2xl font-black text-slate-900 mt-1">
+                {additionalDuties.length}{" "}
+                <span className="text-xs font-normal text-slate-400">Posisi</span>
+              </div>
+            </div>
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 font-medium">Total Ekuivalensi JP</div>
+              <div className="text-2xl font-black text-amber-600 mt-1">
+                {additionalDuties.reduce((acc, d) => acc + (Number(d.equivalentHours) || 0), 0)}{" "}
+                <span className="text-xs font-normal text-slate-400">JP / Minggu</span>
+              </div>
+            </div>
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 font-medium">Guru dengan Tugas Tambahan</div>
+              <div className="text-2xl font-black text-blue-600 mt-1">
+                {new Set(additionalDuties.map((d) => d.teacherId).filter(Boolean)).size}{" "}
+                <span className="text-xs font-normal text-slate-400">Guru</span>
+              </div>
+            </div>
+            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-xs text-slate-500 font-medium">Tugas Belum Terisi Guru</div>
+              <div className="text-2xl font-black text-slate-700 mt-1">
+                {additionalDuties.filter((d) => !d.teacherId).length}{" "}
+                <span className="text-xs font-normal text-slate-400">Posisi TBD</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Grid: Formulir Kiri + Tabel Kanan */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Formulir Input / Edit */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm h-fit space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                  <Award className="w-4 h-4 text-amber-600" />
+                  <span>{dutyForm.id ? "Edit Tugas Tambahan" : "Tambah Tugas Tambahan"}</span>
+                </h4>
+                {dutyForm.id && (
+                  <span className="text-[11px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
+                    Mode Edit
+                  </span>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveDuty} className="space-y-4 text-xs">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Nama Tugas Tambahan *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="cth: Wakil Kepala Sekolah Bidang Kurikulum"
+                    value={dutyForm.name}
+                    onChange={(e) => setDutyForm({ ...dutyForm, name: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Ekuivalensi Jam (JP) *
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={36}
+                    required
+                    value={dutyForm.equivalentHours}
+                    onChange={(e) =>
+                      setDutyForm({
+                        ...dutyForm,
+                        equivalentHours: Number(e.target.value) || 2,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    <span className="text-[10px] text-slate-400 self-center mr-1">Rekomendasi:</span>
+                    {[
+                      { label: "Wali Kelas (2 JP)", jp: 2 },
+                      { label: "Pembina OSIS (2 JP)", jp: 2 },
+                      { label: "Ka. Lab / Bengkel (12 JP)", jp: 12 },
+                      { label: "Wakasek (12 JP)", jp: 12 },
+                    ].map((rec, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setDutyForm({ ...dutyForm, equivalentHours: rec.jp })}
+                        className={`text-[10px] px-2 py-0.5 rounded-md border transition-all ${
+                          dutyForm.equivalentHours === rec.jp
+                            ? "bg-amber-100 text-amber-900 border-amber-300 font-bold"
+                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        {rec.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Guru Pengampu
+                  </label>
+                  <SearchableSelect
+                    options={[
+                      { value: "", label: "-- Belum Ditugaskan / TBD --" },
+                      ...teachers.map((t) => {
+                        const currentTeaching = teacherScheduledCountMap.get(t.id) || 0;
+                        const currentDuty = teacherDutyHoursMap.get(t.id) || 0;
+                        return {
+                          value: t.id,
+                          label: t.name,
+                          badge: t.code,
+                          subLabel: `Beban: ${currentTeaching + currentDuty}/${t.maxPeriods} JP (Tugas: ${currentDuty} JP)`,
+                        };
+                      }),
+                    ]}
+                    value={dutyForm.teacherId}
+                    onChange={(val) => setDutyForm({ ...dutyForm, teacherId: val })}
+                    placeholder="-- Pilih Guru Pengampu --"
+                    searchPlaceholder="Cari nama atau kode guru..."
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Bisa dikosongkan jika belum ada SK penetapan guru.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Nomor SK Penugasan
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="cth: 800/123/SMK2/2026"
+                    value={dutyForm.nomorSk}
+                    onChange={(e) => setDutyForm({ ...dutyForm, nomorSk: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Keterangan / Catatan
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="cth: SK Kepala Sekolah Semester Ganjil 2026/2027"
+                    value={dutyForm.notes}
+                    onChange={(e) => setDutyForm({ ...dutyForm, notes: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="submit"
+                    disabled={busyAction}
+                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 rounded-lg text-xs transition-colors shadow-sm shadow-amber-600/20"
+                  >
+                    {dutyForm.id ? "Simpan Perubahan" : "Tambah Tugas Tambahan"}
+                  </button>
+                  {dutyForm.id && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDutyForm({
+                          name: "",
+                          equivalentHours: 2,
+                          teacherId: "",
+                          nomorSk: "",
+                          notes: "",
+                        })
+                      }
+                      className="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold"
+                    >
+                      Batal
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
+
+            {/* Tabel Daftar Tugas Tambahan */}
+            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+              <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-bold text-slate-900 text-sm">
+                    Daftar Tugas Tambahan Terdaftar ({filteredDuties.length})
+                  </h4>
+                </div>
+
+                <div className="w-full sm:w-64">
+                  <input
+                    type="text"
+                    placeholder="Cari tugas, SK, atau guru..."
+                    value={dutySearch}
+                    onChange={(e) => setDutySearch(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="overflow-x-auto flex-1 min-h-[360px]">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                      <th className="py-3 px-4">Nama Tugas & No. SK</th>
+                      <th className="py-3 px-4 text-center">Ekuivalensi JP</th>
+                      <th className="py-3 px-4">Guru Pengampu</th>
+                      <th className="py-3 px-4">Keterangan</th>
+                      <th className="py-3 px-4 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredDuties.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="text-center py-12 text-slate-400">
+                          {dutySearch
+                            ? "Tidak ada tugas tambahan yang cocok dengan pencarian."
+                            : "Belum ada data tugas tambahan guru. Silakan tambahkan melalui form sebelah kiri atau import dari file CSV."}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredDuties.map((duty: any) => {
+                        const assignedTeacher = duty.teacher;
+                        return (
+                          <tr key={duty.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                                <Briefcase className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                <span>{duty.name}</span>
+                              </div>
+                              {duty.nomorSk ? (
+                                <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                                  SK: {duty.nomorSk}
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-slate-400 italic mt-0.5">
+                                  Belum ada nomor SK
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-sm">
+                                +{duty.equivalentHours} JP
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              {assignedTeacher ? (
+                                <div>
+                                  <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                                    <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-mono text-[10px]">
+                                      {assignedTeacher.code}
+                                    </span>
+                                    <span>{assignedTeacher.name}</span>
+                                  </div>
+                                  {assignedTeacher.nip && (
+                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                      NIP: {assignedTeacher.nip}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="inline-block px-2 py-0.5 rounded text-[11px] bg-slate-100 text-slate-500 border border-slate-200 font-medium">
+                                  Belum Ada Guru (TBD)
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 max-w-[200px] truncate text-slate-600">
+                              {duty.notes || "-"}
+                            </td>
+                            <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setDutyForm({
+                                    id: duty.id,
+                                    name: duty.name,
+                                    equivalentHours: duty.equivalentHours,
+                                    teacherId: duty.teacherId || "",
+                                    nomorSk: duty.nomorSk || "",
+                                    notes: duty.notes || "",
+                                  })
+                                }
+                                className="text-blue-600 hover:text-blue-800 text-xs font-semibold hover:underline"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteEntity("additional_duty", duty.id)}
+                                className="text-red-600 hover:text-red-800 text-xs font-semibold hover:underline"
+                              >
+                                Hapus
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>

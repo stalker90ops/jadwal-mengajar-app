@@ -13,7 +13,7 @@ export async function GET() {
       hasEnsuredActiveDays = true;
     }
 
-    const [activeDays, teachers, subjects, rooms, classes, assignments, schedules, curriculumStandards] = await Promise.all([
+    const [activeDays, teachers, subjects, rooms, classes, assignments, schedules, curriculumStandards, additionalDuties] = await Promise.all([
       prisma.activeDay.findMany({
         orderBy: { dayNumber: 'asc' },
         include: {
@@ -67,6 +67,12 @@ export async function GET() {
           subject: true,
         },
       }),
+      prisma.additionalDuty.findMany({
+        include: {
+          teacher: true,
+        },
+        orderBy: { name: 'asc' },
+      }),
     ]);
 
     const audit = auditAllSchedules(schedules as unknown as ScheduleWithRelations[]);
@@ -81,6 +87,7 @@ export async function GET() {
         assignments,
         schedules,
         curriculumStandards,
+        additionalDuties,
         audit,
       },
       {
@@ -857,6 +864,107 @@ export async function POST(request: Request) {
         return NextResponse.json({
           success: true,
           message: `Berhasil menerapkan beban mengajar mapel umum: ${toCreate.length} baru dibuat, ${toUpdate.length} diperbarui di seluruh rombel.`,
+        });
+      }
+    }
+
+    // ==================== TUGAS TAMBAHAN GURU ====================
+    if (entity === 'additional_duty') {
+      if (action === 'create') {
+        const created = await prisma.additionalDuty.create({
+          data: {
+            name: String(data.name || '').trim(),
+            equivalentHours: Number(data.equivalentHours) || 2,
+            teacherId: data.teacherId ? String(data.teacherId).trim() : null,
+            nomorSk: data.nomorSk ? String(data.nomorSk).trim() : null,
+            notes: data.notes ? String(data.notes).trim() : null,
+          },
+          include: {
+            teacher: true,
+          },
+        });
+        return NextResponse.json({ success: true, item: created });
+      }
+
+      if (action === 'update') {
+        const updated = await prisma.additionalDuty.update({
+          where: { id: String(data.id) },
+          data: {
+            name: String(data.name || '').trim(),
+            equivalentHours: Number(data.equivalentHours) || 2,
+            teacherId: data.teacherId ? String(data.teacherId).trim() : null,
+            nomorSk: data.nomorSk ? String(data.nomorSk).trim() : null,
+            notes: data.notes ? String(data.notes).trim() : null,
+          },
+          include: {
+            teacher: true,
+          },
+        });
+        return NextResponse.json({ success: true, item: updated });
+      }
+
+      if (action === 'delete') {
+        await prisma.additionalDuty.delete({
+          where: { id: String(data.id) },
+        });
+        return NextResponse.json({ success: true, message: 'Tugas tambahan berhasil dihapus.' });
+      }
+
+      if (action === 'clear_all') {
+        const deleted = await prisma.additionalDuty.deleteMany({});
+        return NextResponse.json({
+          success: true,
+          message: `Berhasil mengosongkan seluruh (${deleted.count}) tugas tambahan.`,
+        });
+      }
+
+      if (action === 'import') {
+        const rows = Array.isArray(data.rows) ? data.rows : [];
+        const teachers = await prisma.teacher.findMany();
+        const tMapByCode = new Map<string, string>();
+        const tMapByNip = new Map<string, string>();
+        const tMapByName = new Map<string, string>();
+
+        for (const t of teachers) {
+          tMapByCode.set(t.code.trim().toUpperCase(), t.id);
+          if (t.nip) tMapByNip.set(t.nip.trim(), t.id);
+          tMapByName.set(t.name.trim().toLowerCase(), t.id);
+        }
+
+        let imported = 0;
+        for (const r of rows) {
+          const name = String(r.nama_tugas || r.nama || r.tugas || r.name || r.jabatan || '').trim();
+          if (!name) continue;
+
+          const eqHours = Number(r.ekuivalensi_jp || r.ekuivalensi || r.jp || r.jam || r.equivalent_hours) || 2;
+          const rawCode = String(r.kode_guru || r.kode || r.teacher_code || '').trim().toUpperCase();
+          const rawNip = String(r.nip || r.nip_guru || '').trim();
+          const rawName = String(r.nama_guru || r.guru || r.teacher_name || '').trim().toLowerCase();
+
+          const teacherId =
+            tMapByCode.get(rawCode) ||
+            tMapByNip.get(rawNip) ||
+            tMapByName.get(rawName) ||
+            null;
+
+          const nomorSk = r.nomor_sk || r.no_sk || r.sk || null;
+          const notes = r.keterangan || r.catatan || r.notes || null;
+
+          await prisma.additionalDuty.create({
+            data: {
+              name,
+              equivalentHours: eqHours,
+              teacherId,
+              nomorSk: nomorSk ? String(nomorSk).trim() : null,
+              notes: notes ? String(notes).trim() : null,
+            },
+          });
+          imported++;
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `Berhasil mengimpor ${imported} data tugas tambahan.`,
         });
       }
     }
