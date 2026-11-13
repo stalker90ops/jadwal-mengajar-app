@@ -330,6 +330,37 @@ export default function AdminScheduleDashboard() {
     }
   };
 
+  const handleClearCurriculumStandards = async () => {
+    if (
+      !confirm(
+        "Yakin ingin mengosongkan seluruh data standar kurikulum? Semua inputan JP X, XI, XII akan direset ke 0."
+      )
+    )
+      return;
+    setBusyAction(true);
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "curriculum_standard",
+          action: "clear_all",
+          data: {},
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setStandardInputs({});
+        showMessage("success", data.message || "Standar kurikulum berhasil dikosongkan.");
+        await loadAllData();
+      } else {
+        showMessage("error", data.error || "Gagal mengosongkan standar kurikulum");
+      }
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
   const handleApplyStandardsToClasses = async () => {
     if (!confirm("Terapkan standar JP mapel umum ke semua rombel (X, XI, XII)? Beban mengajar akan otomatis dibuat tanpa guru (guru bisa dipilih belakangan).")) return;
     setBusyAction(true);
@@ -1913,6 +1944,17 @@ export default function AdminScheduleDashboard() {
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors"
               >
                 <span>Simpan Matriks</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClearCurriculumStandards}
+                disabled={busyAction}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
+                title="Kosongkan seluruh data standar kurikulum"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Kosongkan Matriks</span>
               </button>
 
               <button

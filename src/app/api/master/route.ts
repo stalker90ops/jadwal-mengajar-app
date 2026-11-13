@@ -635,6 +635,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, message: 'Standar kurikulum berhasil disimpan.' });
       }
 
+      if (action === 'clear_all') {
+        const deleted = await prisma.curriculumStandard.deleteMany({});
+        return NextResponse.json({
+          success: true,
+          message: `Berhasil mengosongkan seluruh (${deleted.count}) data standar kurikulum.`,
+        });
+      }
+
       if (action === 'import') {
         const rows = Array.isArray(data.rows) ? data.rows : [];
         const subjects = await prisma.subject.findMany();
