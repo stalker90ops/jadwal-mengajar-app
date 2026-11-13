@@ -34,6 +34,7 @@ import {
   ConflictDetail,
 } from "@/lib/schedule-validator";
 import SearchableSelect from "@/components/SearchableSelect";
+import ProgressModal, { ProgressStep, ProgressStatItem } from "@/components/ProgressModal";
 
 type TabKey =
   | "schedule"
@@ -203,6 +204,31 @@ export default function AdminScheduleDashboard() {
   const [assignmentFilterTeacherStatus, setAssignmentFilterTeacherStatus] = useState<string>("ALL");
   const [assignmentSearch, setAssignmentSearch] = useState<string>("");
 
+  // Modal Progress Operasi Interaktif (Auto-Generate, Import CSV, Terapkan Kurikulum)
+  const [progressModal, setProgressModal] = useState<{
+    isOpen: boolean;
+    iconType: "schedule" | "import" | "curriculum";
+    title: string;
+    subtitle: string;
+    progressPercent: number;
+    steps: ProgressStep[];
+    activeStepIndex: number;
+    status: "running" | "success" | "error";
+    errorText?: string;
+    resultStats?: ProgressStatItem[];
+    extraDetails?: React.ReactNode;
+    actionButtonText?: string;
+  }>({
+    isOpen: false,
+    iconType: "schedule",
+    title: "",
+    subtitle: "",
+    progressPercent: 0,
+    steps: [],
+    activeStepIndex: 0,
+    status: "running",
+  });
+
   useEffect(() => {
     // Bangun map standar yang sudah ada
     const initial: Record<string, { totalPeriods: number; maxPerDay: number }> = {};
@@ -307,9 +333,35 @@ export default function AdminScheduleDashboard() {
   const handleApplyStandardsToClasses = async () => {
     if (!confirm("Terapkan standar JP mapel umum ke semua rombel (X, XI, XII)? Beban mengajar akan otomatis dibuat tanpa guru (guru bisa dipilih belakangan).")) return;
     setBusyAction(true);
+
+    const steps: ProgressStep[] = [
+      { label: "Menyimpan perubahan matriks standar kurikulum", detail: "Menyinkronkan data standar..." },
+      { label: `Memetakan ke seluruh ${classes.length} rombel sekolah`, detail: "Mengelompokkan rombel berdasarkan tingkat X, XI, XII..." },
+      { label: "Membagi alokasi beban mengajar mapel umum", detail: "Membuat data beban mengajar otomatis..." },
+      { label: "Memperbarui tampilan beban mengajar", detail: "Selesai..." },
+    ];
+
+    setProgressModal({
+      isOpen: true,
+      iconType: "curriculum",
+      title: "Menerapkan Standar Kurikulum ke Rombel",
+      subtitle: `Mendistribusikan standar JP ke ${classes.length} rombel sekolah...`,
+      progressPercent: 25,
+      steps,
+      activeStepIndex: 0,
+      status: "running",
+      actionButtonText: "Selesai & Lihat Beban Mengajar",
+    });
+
     try {
       // Pastikan standar terbaru tersimpan dulu
       await handleSaveCurriculumStandards();
+
+      setProgressModal((prev) => ({
+        ...prev,
+        progressPercent: 65,
+        activeStepIndex: 2,
+      }));
 
       const res = await fetch("/api/master", {
         method: "POST",
@@ -322,11 +374,62 @@ export default function AdminScheduleDashboard() {
       });
       const data = await res.json();
       if (res.ok) {
-        showMessage("success", data.message);
         await loadAllData();
+        setProgressModal({
+          isOpen: true,
+          iconType: "curriculum",
+          title: "Penerapan Kurikulum Berhasil!",
+          subtitle: `Standar JP berhasil didistribusikan ke seluruh ${classes.length} rombel.`,
+          progressPercent: 100,
+          steps,
+          activeStepIndex: 3,
+          status: "success",
+          resultStats: [
+            {
+              label: "Total Rombel",
+              value: `${classes.length} Kelas`,
+              badge: "Teraplikasi",
+            },
+            {
+              label: "Status Guru",
+              value: "TBD (Belum Ada Guru)",
+              badge: "Bisa Diisi Kapan Saja",
+            },
+          ],
+          extraDetails: (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-medium">
+              {data.message || "Beban mengajar mapel umum berhasil dibuat ke seluruh rombel."}
+            </div>
+          ),
+          actionButtonText: "Buka Beban Mengajar",
+        });
       } else {
-        showMessage("error", data.error || "Gagal menerapkan standar");
+        setProgressModal({
+          isOpen: true,
+          iconType: "curriculum",
+          title: "Gagal Menerapkan Standar",
+          subtitle: "Terjadi kesalahan pada server.",
+          progressPercent: 100,
+          steps,
+          activeStepIndex: 2,
+          status: "error",
+          errorText: data.error || "Gagal menerapkan standar kurikulum ke rombel.",
+          actionButtonText: "Tutup",
+        });
       }
+    } catch (err: any) {
+      setProgressModal({
+        isOpen: true,
+        iconType: "curriculum",
+        title: "Gagal Menerapkan Standar",
+        subtitle: "Terjadi gangguan jaringan.",
+        progressPercent: 100,
+        steps,
+        activeStepIndex: 2,
+        status: "error",
+        errorText: err?.message || "Koneksi terputus.",
+        actionButtonText: "Tutup",
+      });
     } finally {
       setBusyAction(false);
     }
@@ -437,6 +540,42 @@ export default function AdminScheduleDashboard() {
 
   const handleAutoGenerate = async () => {
     setBusyAction(true);
+    const steps: ProgressStep[] = [
+      { label: "Membaca & menjaga jadwal yang dikunci (Locked Slots)", detail: "Memeriksa slot agar jadwal manual tidak tergeser..." },
+      { label: `Menganalisis ketersediaan ${teachers.length} guru & ${rooms.length} ruangan`, detail: "Mengecek hari aktif guru dan lab ruangan..." },
+      { label: `Menjalankan algoritma optimasi jadwal untuk ${classes.length} rombel`, detail: "Menyusun kombinasi slot anti-bentrok..." },
+      { label: "Menyimpan seluruh jadwal ke database & sinkronisasi", detail: "Menyelesaikan proses..." },
+    ];
+
+    setProgressModal({
+      isOpen: true,
+      iconType: "schedule",
+      title: "Menyusun Jadwal Otomatis (Anti-Bentrok)",
+      subtitle: `Memproses ${classes.length} Rombel, ${teachers.length} Guru, dan ${rooms.length} Ruangan...`,
+      progressPercent: 15,
+      steps,
+      activeStepIndex: 0,
+      status: "running",
+      actionButtonText: "Tutup & Lihat Jadwal",
+    });
+
+    // Simulasi transisi visual tahap 1 -> 2
+    const timer1 = setTimeout(() => {
+      setProgressModal((prev) => ({
+        ...prev,
+        progressPercent: 50,
+        activeStepIndex: 1,
+      }));
+    }, 400);
+
+    const timer2 = setTimeout(() => {
+      setProgressModal((prev) => ({
+        ...prev,
+        progressPercent: 80,
+        activeStepIndex: 2,
+      }));
+    }, 900);
+
     try {
       const res = await fetch("/api/roster/schedules", {
         method: "POST",
@@ -444,16 +583,97 @@ export default function AdminScheduleDashboard() {
         body: JSON.stringify({ action: "auto_generate" }),
       });
       const data = await res.json();
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+
       if (res.ok) {
-        const extra =
-          data.unscheduled?.length > 0
-            ? ` (${data.unscheduled.length} beban mengajar belum kebagian slot penuh karena keterbatasan hari aktif/ruang)`
-            : "";
-        showMessage("success", `${data.message}${extra}`);
         await loadAllData();
+        const successRate = Math.round(
+          ((data.totalScheduledPeriods || 0) / (data.totalRequestedPeriods || 1)) * 100
+        );
+
+        setProgressModal({
+          isOpen: true,
+          iconType: "schedule",
+          title: "Auto-Generate Jadwal Berhasil!",
+          subtitle: "Jadwal telah selesai disusun dan disimpan ke database.",
+          progressPercent: 100,
+          steps,
+          activeStepIndex: 3,
+          status: "success",
+          resultStats: [
+            {
+              label: "Total Terjadwal",
+              value: `${data.totalScheduledPeriods || 0} / ${data.totalRequestedPeriods || 0} JP`,
+              badge: `${successRate}% Berhasil`,
+            },
+            {
+              label: "Status Bentrok",
+              value: "0 Bentrok",
+              badge: "Aman 100%",
+            },
+            {
+              label: "Total Rombel",
+              value: `${classes.length} Kelas`,
+            },
+          ],
+          extraDetails:
+            data.unscheduled && data.unscheduled.length > 0 ? (
+              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs">
+                <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>
+                    Perhatian: {data.unscheduled.length} alokasi jam belum kebagian slot penuh
+                  </span>
+                </div>
+                <p className="text-amber-800 text-[11px]">
+                  Hal ini terjadi jika hari aktif guru terlalu terbatas, belum ada guru pengampu (TBD), atau kapasitas ruang:
+                </p>
+                <div className="max-h-36 overflow-y-auto space-y-1.5 pt-1 divide-y divide-amber-200/60">
+                  {data.unscheduled.map((u: any, idx: number) => (
+                    <div key={idx} className="pt-1 text-[11px] text-amber-900">
+                      <div className="font-semibold">
+                        {u.className} • {u.subjectName} ({u.teacherName})
+                      </div>
+                      <div className="text-amber-700">
+                        {u.scheduledPeriods}/{u.requestedPeriods} JP — {u.reason}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null,
+          actionButtonText: "Tutup & Lihat Jadwal",
+        });
       } else {
-        showMessage("error", data.error || "Gagal melakukan auto-generate jadwal");
+        setProgressModal({
+          isOpen: true,
+          iconType: "schedule",
+          title: "Auto-Generate Gagal",
+          subtitle: "Terjadi kesalahan saat memproses penyusunan jadwal.",
+          progressPercent: 100,
+          steps,
+          activeStepIndex: 2,
+          status: "error",
+          errorText: data.error || "Gagal melakukan auto-generate jadwal",
+          actionButtonText: "Tutup",
+        });
       }
+    } catch (err: any) {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      setProgressModal({
+        isOpen: true,
+        iconType: "schedule",
+        title: "Auto-Generate Gagal",
+        subtitle: "Terjadi gangguan jaringan atau server.",
+        progressPercent: 100,
+        steps,
+        activeStepIndex: 2,
+        status: "error",
+        errorText: err?.message || "Koneksi ke server terputus.",
+        actionButtonText: "Tutup",
+      });
     } finally {
       setBusyAction(false);
     }
@@ -838,15 +1058,64 @@ export default function AdminScheduleDashboard() {
     const file = e.target.files?.[0];
     if (!file || !importTargetEntity) return;
 
-    const text = await file.text();
-    const rows = parseCsvText(text);
-    if (rows.length === 0) {
-      showMessage("error", "File CSV kosong atau format kolom tidak terbaca.");
-      return;
-    }
+    const entityLabels: Record<string, string> = {
+      teacher: "Data Guru",
+      subject: "Mata Pelajaran",
+      room: "Ruangan",
+      class: "Kelas / Rombel",
+      activeDay: "Hari & Jam Aktif",
+      assignment: "Beban Mengajar",
+      curriculum_standard: "Standar Kurikulum",
+    };
+    const entityName = entityLabels[importTargetEntity] || importTargetEntity;
+
+    const steps: ProgressStep[] = [
+      { label: `Membaca file "${file.name}"`, detail: `Ukuran: ${Math.round(file.size / 1024) || 1} KB...` },
+      { label: "Validasi format kolom CSV & kelengkapan data", detail: "Memeriksa baris..." },
+      { label: "Menyimpan data ke database", detail: "Mengunggah data..." },
+      { label: "Menyinkronkan data ke dashboard", detail: "Memperbarui tampilan..." },
+    ];
+
+    setProgressModal({
+      isOpen: true,
+      iconType: "import",
+      title: `Mengimpor ${entityName}`,
+      subtitle: `File: ${file.name} (${Math.round(file.size / 1024) || 1} KB)`,
+      progressPercent: 20,
+      steps,
+      activeStepIndex: 0,
+      status: "running",
+      actionButtonText: "Selesai",
+    });
 
     setBusyAction(true);
     try {
+      const text = await file.text();
+      const rows = parseCsvText(text);
+
+      if (rows.length === 0) {
+        setProgressModal({
+          isOpen: true,
+          iconType: "import",
+          title: `Import ${entityName} Gagal`,
+          subtitle: `File: ${file.name}`,
+          progressPercent: 100,
+          steps,
+          activeStepIndex: 1,
+          status: "error",
+          errorText: "File CSV kosong atau format kolom tidak terbaca. Pastikan menggunakan format template yang disediakan.",
+          actionButtonText: "Tutup",
+        });
+        return;
+      }
+
+      setProgressModal((prev) => ({
+        ...prev,
+        progressPercent: 60,
+        activeStepIndex: 2,
+        subtitle: `Memproses ${rows.length} baris data dari file ${file.name}...`,
+      }));
+
       const res = await fetch("/api/master", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -857,12 +1126,67 @@ export default function AdminScheduleDashboard() {
         }),
       });
       const data = await res.json();
+
       if (res.ok) {
-        showMessage("success", data.message || "Import berhasil!");
         await loadAllData();
+        setProgressModal({
+          isOpen: true,
+          iconType: "import",
+          title: `Import ${entityName} Berhasil!`,
+          subtitle: `File: ${file.name}`,
+          progressPercent: 100,
+          steps,
+          activeStepIndex: 3,
+          status: "success",
+          resultStats: [
+            {
+              label: "Status",
+              value: "Berhasil",
+              badge: "Tersimpan",
+            },
+            {
+              label: "Jumlah Baris",
+              value: `${rows.length} Baris`,
+            },
+            {
+              label: "Entitas Data",
+              value: entityName,
+            },
+          ],
+          extraDetails: (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-medium">
+              {data.message || `Berhasil mengimpor data ${entityName}.`}
+            </div>
+          ),
+          actionButtonText: "Selesai",
+        });
       } else {
-        showMessage("error", data.error || "Gagal melakukan import data");
+        setProgressModal({
+          isOpen: true,
+          iconType: "import",
+          title: `Import ${entityName} Gagal`,
+          subtitle: `File: ${file.name}`,
+          progressPercent: 100,
+          steps,
+          activeStepIndex: 2,
+          status: "error",
+          errorText: data.error || "Gagal melakukan import data ke server.",
+          actionButtonText: "Tutup",
+        });
       }
+    } catch (err: any) {
+      setProgressModal({
+        isOpen: true,
+        iconType: "import",
+        title: `Import ${entityName} Gagal`,
+        subtitle: `File: ${file.name}`,
+        progressPercent: 100,
+        steps,
+        activeStepIndex: 2,
+        status: "error",
+        errorText: err?.message || "Gagal memproses file CSV.",
+        actionButtonText: "Tutup",
+      });
     } finally {
       setBusyAction(false);
     }
@@ -3278,6 +3602,23 @@ export default function AdminScheduleDashboard() {
           </div>
         </div>
       )}
+
+      {/* ==================== MODAL PROGRESS INTERAKTIF (AUTO-GENERATE & IMPORT) ==================== */}
+      <ProgressModal
+        isOpen={progressModal.isOpen}
+        onClose={() => setProgressModal((prev) => ({ ...prev, isOpen: false }))}
+        iconType={progressModal.iconType}
+        title={progressModal.title}
+        subtitle={progressModal.subtitle}
+        progressPercent={progressModal.progressPercent}
+        steps={progressModal.steps}
+        activeStepIndex={progressModal.activeStepIndex}
+        status={progressModal.status}
+        errorText={progressModal.errorText}
+        resultStats={progressModal.resultStats}
+        extraDetails={progressModal.extraDetails}
+        actionButtonText={progressModal.actionButtonText}
+      />
     </div>
   );
 }
