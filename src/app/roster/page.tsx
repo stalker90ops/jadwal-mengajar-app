@@ -1062,6 +1062,34 @@ export default function AdminScheduleDashboard() {
     );
   }, [assignments, scheduleForm.classGroupId, scheduleForm.subjectId, scheduleForm.teacherId]);
 
+  // Sisa kuota JP Beban Mengajar yang akurat untuk modal Tambah/Edit Jadwal
+  const modalRemainingQuota = useMemo(() => {
+    if (!selectedModalAssignment) return 999;
+    const existingCount = schedules.filter(
+      (s) =>
+        s.classGroupId === scheduleForm.classGroupId &&
+        s.subjectId === scheduleForm.subjectId &&
+        (!scheduleForm.id || s.id !== scheduleForm.id)
+    ).length;
+    return Math.max(0, (selectedModalAssignment.totalPeriods || 0) - existingCount);
+  }, [
+    selectedModalAssignment,
+    schedules,
+    scheduleForm.classGroupId,
+    scheduleForm.subjectId,
+    scheduleForm.id,
+  ]);
+
+  const requestedPeriodsCount = useMemo(() => {
+    if (scheduleForm.id) return 1;
+    return effectiveRangeSlots.length;
+  }, [scheduleForm.id, effectiveRangeSlots]);
+
+  const isQuotaExceeded = useMemo(() => {
+    if (!selectedModalAssignment) return false;
+    return requestedPeriodsCount > modalRemainingQuota;
+  }, [selectedModalAssignment, requestedPeriodsCount, modalRemainingQuota]);
+
   const openAddScheduleModal = (dayId?: string, slotId?: string) => {
     const defaultDay = dayId
       ? activeDays.find((d) => d.id === dayId)
@@ -1137,6 +1165,15 @@ export default function AdminScheduleDashboard() {
         showMessage("error", "Rentang jam yang dipilih hanya berisi waktu istirahat. Pilih rentang jam efektif mengajar.");
         return;
       }
+    }
+
+    // Validasi Ketat Kuota Beban Mengajar (JP) - Jumlah jam efektif tidak boleh melebihi beban JP
+    if (selectedModalAssignment && isQuotaExceeded) {
+      showMessage(
+        "error",
+        `Jumlah total jam efektif (${requestedPeriodsCount} JP) melebihi batas beban mengajar (${modalRemainingQuota} JP tersisa). Tidak dapat disimpan.`
+      );
+      return;
     }
 
     setBusyAction(true);
@@ -5147,34 +5184,65 @@ export default function AdminScheduleDashboard() {
 
               {/* Status Sisa Kuota Beban Mengajar */}
               {selectedModalAssignment && (
-                <div className="p-3 bg-indigo-50/90 border border-indigo-200 rounded-xl flex items-center justify-between text-xs text-indigo-950">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-indigo-900">📌 Beban Mengajar:</span>
-                    <span className="font-semibold text-indigo-950">
-                      {selectedModalAssignment.subject?.name}
-                    </span>
-                    <span className="text-slate-500">
-                      ({selectedModalAssignment.teacher?.name || "Belum Ada Guru"})
-                    </span>
+                <div
+                  className={`p-3.5 rounded-xl border text-xs transition-all ${
+                    isQuotaExceeded
+                      ? "bg-red-50/90 border-red-300 text-red-950"
+                      : "bg-indigo-50/90 border-indigo-200 text-indigo-950"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-bold text-indigo-900">📌 Beban Mengajar:</span>
+                      <span className="font-bold text-slate-900">
+                        {selectedModalAssignment.subject?.name}
+                      </span>
+                      <span className="text-slate-500">
+                        ({selectedModalAssignment.teacher?.name || "Belum Ada Guru (TBD)"})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 font-semibold">
+                      <span className="bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded-md">
+                        Beban: {selectedModalAssignment.totalPeriods} JP
+                      </span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-md font-bold ${
+                          isQuotaExceeded
+                            ? "bg-red-600 text-white shadow-sm"
+                            : modalRemainingQuota === 0
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        Sisa Kuota: {modalRemainingQuota} JP
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 font-semibold">
-                    <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
-                      Beban: {selectedModalAssignment.totalPeriods} JP
-                    </span>
-                    <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
-                      Sisa Kuota:{" "}
-                      {Math.max(
-                        0,
-                        selectedModalAssignment.totalPeriods -
-                          (assignmentScheduledCountMap.get(
-                            `${selectedModalAssignment.classGroupId}_${selectedModalAssignment.subjectId}_${
-                              selectedModalAssignment.teacherId || ""
-                            }`
-                          ) || 0)
-                      )}{" "}
-                      JP
-                    </span>
-                  </div>
+
+                  {/* Keterangan Otomatisasi Guru dari Jadwal ke Beban Mengajar jika TBD */}
+                  {!selectedModalAssignment.teacherId && scheduleForm.teacherId && (
+                    <div className="mt-2 pt-2 border-t border-indigo-100 flex items-center gap-1.5 text-[11px] text-blue-700 font-medium bg-blue-50/70 p-2 rounded-lg">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span>
+                        Guru <strong>{teachers.find((t) => t.id === scheduleForm.teacherId)?.name}</strong> otomatis akan ditetapkan pada Beban Mengajar kelas ini setelah jadwal disimpan.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Peringatan Blokir Ketat jika Jam Efektif Melebihi Kuota Beban */}
+                  {isQuotaExceeded && (
+                    <div className="mt-2.5 pt-2.5 border-t border-red-200 text-xs text-red-700 font-medium flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold text-red-800">
+                          Total jam efektif ({requestedPeriodsCount} JP) melebihi batas beban JP ({modalRemainingQuota} JP tersisa)!
+                        </span>
+                        <p className="mt-0.5 text-[11px] text-red-600">
+                          Sistem memblokir penyimpanan ini. Harap perkecil rentang jam pelajaran yang dipilih atau ubah alokasi beban mengajar di menu Kurikulum &gt; Beban Mengajar terlebih dahulu.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -5238,18 +5306,29 @@ export default function AdminScheduleDashboard() {
                   <button
                     type="button"
                     onClick={() => setShowScheduleModal(false)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium"
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-xs"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
                     disabled={
-                      busyAction || (liveErrorConflicts.length > 0 && !scheduleForm.forceSave)
+                      busyAction ||
+                      isQuotaExceeded ||
+                      (liveErrorConflicts.length > 0 && !scheduleForm.forceSave)
                     }
-                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-lg font-semibold shadow-sm"
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold shadow-sm text-xs transition-all"
+                    title={
+                      isQuotaExceeded
+                        ? `Durasi jam (${requestedPeriodsCount} JP) melebihi sisa beban (${modalRemainingQuota} JP)`
+                        : undefined
+                    }
                   >
-                    {scheduleForm.id ? "Simpan Perubahan" : "Simpan Jadwal"}
+                    {isQuotaExceeded
+                      ? `Melebihi Kuota Beban (${requestedPeriodsCount} > ${modalRemainingQuota} JP)`
+                      : scheduleForm.id
+                      ? "Simpan Perubahan"
+                      : "Simpan Jadwal"}
                   </button>
                 </div>
               </div>

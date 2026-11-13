@@ -120,6 +120,25 @@ export async function POST(request: Request) {
       }
 
       if (action === 'create') {
+        // Validasi Batasan Kuota Beban Mengajar (JP)
+        const assignment = await prisma.teachingAssignment.findFirst({
+          where: { classGroupId, subjectId },
+        });
+        if (assignment) {
+          const scheduledCount = await prisma.schedule.count({
+            where: { classGroupId, subjectId },
+          });
+          if (scheduledCount + 1 > assignment.totalPeriods) {
+            const sisa = Math.max(0, assignment.totalPeriods - scheduledCount);
+            return NextResponse.json(
+              {
+                error: `Jumlah jam melebihi beban JP (${assignment.totalPeriods} JP). Sisa kuota hanya ${sisa} JP.`,
+              },
+              { status: 400 }
+            );
+          }
+        }
+
         const created = await prisma.schedule.create({
           data: {
             activeDayId,
@@ -132,15 +151,62 @@ export async function POST(request: Request) {
             isLocked: Boolean(isLocked),
           },
         });
+
+        // Sinkronisasi otomatis guru ke Beban Mengajar jika sebelumnya TBD (belum ada guru)
+        let autoAssignedTeacher = false;
+        if (teacherId) {
+          const unassignedAssignment = await prisma.teachingAssignment.findFirst({
+            where: {
+              classGroupId,
+              subjectId,
+              OR: [{ teacherId: null }, { teacherId: '' }],
+            },
+          });
+          if (unassignedAssignment) {
+            await prisma.teachingAssignment.update({
+              where: { id: unassignedAssignment.id },
+              data: { teacherId },
+            });
+            autoAssignedTeacher = true;
+          }
+        }
+
         return NextResponse.json({
           success: true,
           valid: errorConflicts.length === 0,
           conflicts,
           item: created,
+          message: `Jadwal berhasil disimpan!${
+            autoAssignedTeacher
+              ? ` Guru ${teacher.name} otomatis ditetapkan pada Beban Mengajar.`
+              : ''
+          }`,
         });
       }
 
       if (action === 'update') {
+        const assignment = await prisma.teachingAssignment.findFirst({
+          where: { classGroupId, subjectId },
+        });
+        if (assignment) {
+          const scheduledCount = await prisma.schedule.count({
+            where: {
+              classGroupId,
+              subjectId,
+              id: { not: id },
+            },
+          });
+          if (scheduledCount + 1 > assignment.totalPeriods) {
+            const sisa = Math.max(0, assignment.totalPeriods - scheduledCount);
+            return NextResponse.json(
+              {
+                error: `Jumlah jam melebihi beban JP (${assignment.totalPeriods} JP). Sisa kuota hanya ${sisa} JP.`,
+              },
+              { status: 400 }
+            );
+          }
+        }
+
         const updated = await prisma.schedule.update({
           where: { id },
           data: {
@@ -154,11 +220,35 @@ export async function POST(request: Request) {
             ...(isLocked !== undefined ? { isLocked: Boolean(isLocked) } : {}),
           },
         });
+
+        let autoAssignedTeacher = false;
+        if (teacherId) {
+          const unassignedAssignment = await prisma.teachingAssignment.findFirst({
+            where: {
+              classGroupId,
+              subjectId,
+              OR: [{ teacherId: null }, { teacherId: '' }],
+            },
+          });
+          if (unassignedAssignment) {
+            await prisma.teachingAssignment.update({
+              where: { id: unassignedAssignment.id },
+              data: { teacherId },
+            });
+            autoAssignedTeacher = true;
+          }
+        }
+
         return NextResponse.json({
           success: true,
           valid: errorConflicts.length === 0,
           conflicts,
           item: updated,
+          message: `Jadwal berhasil diperbarui!${
+            autoAssignedTeacher
+              ? ` Guru ${teacher.name} otomatis ditetapkan pada Beban Mengajar.`
+              : ''
+          }`,
         });
       }
     }
@@ -238,6 +328,25 @@ export async function POST(request: Request) {
         );
       }
 
+      // Validasi Batasan Kuota Beban Mengajar (JP)
+      const assignment = await prisma.teachingAssignment.findFirst({
+        where: { classGroupId, subjectId },
+      });
+      if (assignment) {
+        const scheduledCount = await prisma.schedule.count({
+          where: { classGroupId, subjectId },
+        });
+        if (scheduledCount + validSlots.length > assignment.totalPeriods) {
+          const sisa = Math.max(0, assignment.totalPeriods - scheduledCount);
+          return NextResponse.json(
+            {
+              error: `Jumlah total jam efektif (${validSlots.length} JP) melebihi batas beban mengajar (${assignment.totalPeriods} JP). Sisa kuota hanya ${sisa} JP.`,
+            },
+            { status: 400 }
+          );
+        }
+      }
+
       const createdItems: any[] = [];
       const allConflicts: any[] = [];
 
@@ -289,10 +398,33 @@ export async function POST(request: Request) {
         createdItems.push(item);
       }
 
+      // Sinkronisasi otomatis guru ke Beban Mengajar jika sebelumnya TBD (belum ada guru)
+      let autoAssignedTeacher = false;
+      if (teacherId) {
+        const unassignedAssignment = await prisma.teachingAssignment.findFirst({
+          where: {
+            classGroupId,
+            subjectId,
+            OR: [{ teacherId: null }, { teacherId: '' }],
+          },
+        });
+        if (unassignedAssignment) {
+          await prisma.teachingAssignment.update({
+            where: { id: unassignedAssignment.id },
+            data: { teacherId },
+          });
+          autoAssignedTeacher = true;
+        }
+      }
+
       return NextResponse.json({
         success: true,
         valid: allConflicts.filter((c) => c.severity === 'ERROR').length === 0,
-        message: `Berhasil menambahkan ${createdItems.length} slot jadwal sekaligus.`,
+        message: `Berhasil menambahkan ${createdItems.length} slot jadwal sekaligus.${
+          autoAssignedTeacher
+            ? ` Guru ${teacher.name} otomatis ditetapkan pada Beban Mengajar.`
+            : ''
+        }`,
         createdCount: createdItems.length,
         items: createdItems,
         conflicts: allConflicts,
