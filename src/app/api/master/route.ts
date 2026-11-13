@@ -627,6 +627,106 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, message: 'Standar kurikulum berhasil disimpan.' });
       }
 
+      if (action === 'import') {
+        const rows = Array.isArray(data.rows) ? data.rows : [];
+        const subjects = await prisma.subject.findMany();
+        const sMapByCode = new Map<string, string>();
+        const sMapByName = new Map<string, string>();
+
+        for (const s of subjects) {
+          sMapByCode.set(s.code.trim().toUpperCase(), s.id);
+          sMapByName.set(s.name.trim().toUpperCase(), s.id);
+        }
+
+        let imported = 0;
+
+        for (const r of rows) {
+          const rawCode = String(r.kode_mapel || r.kode || r.subject_code || '').trim().toUpperCase();
+          const rawName = String(r.nama_mapel || r.nama || r.subject_name || '').trim().toUpperCase();
+          const subjectId = sMapByCode.get(rawCode) || sMapByName.get(rawName) || sMapByName.get(rawCode);
+
+          if (!subjectId) continue;
+
+          const defaultMax = Number(r.maks_jp_per_hari || r.max_per_day || r.max_jp || r.maks_per_hari) || 2;
+
+          // Cek apakah format kolom per tingkat (Wide Matrix: jp_kelas_x, jp_kelas_xi, jp_kelas_xii)
+          const hasWideCols =
+            'jp_kelas_x' in r ||
+            'x' in r ||
+            'jp_x' in r ||
+            'jp_kelas_xi' in r ||
+            'xi' in r ||
+            'jp_kelas_xii' in r ||
+            'xii' in r;
+
+          if (hasWideCols) {
+            const gradesData = [
+              { grade: 'X', jp: Number(r.jp_kelas_x || r.x || r.jp_x || 0) },
+              { grade: 'XI', jp: Number(r.jp_kelas_xi || r.xi || r.jp_xi || 0) },
+              { grade: 'XII', jp: Number(r.jp_kelas_xii || r.xii || r.jp_xii || 0) },
+            ];
+
+            for (const gd of gradesData) {
+              await prisma.curriculumStandard.upsert({
+                where: {
+                  subjectId_grade: {
+                    subjectId,
+                    grade: gd.grade,
+                  },
+                },
+                update: {
+                  totalPeriods: gd.jp,
+                  maxPerDay: defaultMax,
+                },
+                create: {
+                  subjectId,
+                  grade: gd.grade,
+                  totalPeriods: gd.jp,
+                  maxPerDay: defaultMax,
+                },
+              });
+              imported++;
+            }
+          } else {
+            // Standard Row Format: tingkat / grade
+            let rawGrade = String(r.tingkat || r.grade || r.tingkatan || r.kelas || '').trim().toUpperCase();
+            if (rawGrade === '10' || rawGrade === 'KELAS 10' || rawGrade === 'KELAS X') rawGrade = 'X';
+            if (rawGrade === '11' || rawGrade === 'KELAS 11' || rawGrade === 'KELAS XI') rawGrade = 'XI';
+            if (rawGrade === '12' || rawGrade === 'KELAS 12' || rawGrade === 'KELAS XII') rawGrade = 'XII';
+
+            if (!['X', 'XI', 'XII'].includes(rawGrade)) continue;
+
+            const totalPeriods = Number(r.jumlah_jp || r.total_jp || r.jp || r.periode) || 0;
+            const maxPerDay = Number(r.maks_jp_per_hari || r.max_per_day || r.max_jp || r.maks_per_hari) || defaultMax;
+
+            await prisma.curriculumStandard.upsert({
+              where: {
+                subjectId_grade: {
+                  subjectId,
+                  grade: rawGrade,
+                },
+              },
+              update: {
+                totalPeriods,
+                maxPerDay,
+              },
+              create: {
+                subjectId,
+                grade: rawGrade,
+                totalPeriods,
+                maxPerDay,
+              },
+            });
+            imported++;
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `Berhasil mengimpor ${imported} data standar alokasi JP kurikulum.`,
+        });
+      }
+
       if (action === 'apply_to_classes') {
         // Terapkan standar mapel umum ke semua rombel sesuai tingkatannya (X, XI, XII)
         const [standards, classes, subjects] = await Promise.all([

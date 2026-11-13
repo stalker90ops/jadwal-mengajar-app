@@ -225,6 +225,41 @@ export default function AdminScheduleDashboard() {
     }));
   };
 
+  const handleDownloadCurriculumTemplate = () => {
+    const commonSubjects = subjects.filter((s) => s.category === "UMUM");
+    const sampleRows =
+      commonSubjects.length > 0
+        ? commonSubjects.map((s) => {
+            const xKey = `${s.id}_X`;
+            const xiKey = `${s.id}_XI`;
+            const xiiKey = `${s.id}_XII`;
+            return [
+              s.code,
+              s.name,
+              standardInputs[xKey]?.totalPeriods ?? 4,
+              standardInputs[xiKey]?.totalPeriods ?? 3,
+              standardInputs[xiiKey]?.totalPeriods ?? 2,
+              standardInputs[xKey]?.maxPerDay ?? 2,
+            ];
+          })
+        : [
+            ["BIND", "Bahasa Indonesia", 4, 3, 2, 2],
+            ["MAT", "Matematika", 4, 4, 4, 2],
+            ["ING", "Bahasa Inggris", 3, 3, 2, 2],
+            ["PAI", "Pendidikan Agama Islam", 3, 3, 3, 2],
+            ["PPKN", "Pendidikan Pancasila", 2, 2, 2, 2],
+            ["PJOK", "Pendidikan Jasmani", 3, 2, 0, 2],
+            ["SEJ", "Sejarah", 2, 2, 0, 2],
+            ["SENI", "Seni Budaya", 2, 0, 0, 2],
+          ];
+
+    downloadCsvFile(
+      "Template_Import_Standar_Kurikulum.csv",
+      ["Kode_Mapel", "Nama_Mapel", "JP_Kelas_X", "JP_Kelas_XI", "JP_Kelas_XII", "Maks_JP_Per_Hari"],
+      sampleRows
+    );
+  };
+
   const handleSaveCurriculumStandards = async () => {
     setBusyAction(true);
     try {
@@ -1477,20 +1512,42 @@ export default function AdminScheduleDashboard() {
                 Tentukan alokasi Jam Pelajaran (JP) per minggu untuk setiap tingkat kelas (X, XI, XII). Cukup atur sekali, lalu sistem akan otomatis membuat beban mengajar ke seluruh <strong>{classes.length} Rombel</strong> tanpa perlu input manual berulang-ulang.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadCurriculumTemplate}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
+                title="Unduh format template CSV Excel untuk diisi secara offline"
+              >
+                <Download className="w-4 h-4" />
+                <span>Unduh Template CSV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => triggerImportFile("curriculum_standard")}
+                disabled={busyAction}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-sm transition-colors"
+                title="Unggah file CSV standar kurikulum"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Import CSV Standar</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleSaveCurriculumStandards}
                 disabled={busyAction}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors"
               >
-                <span>Simpan Matriks Standar</span>
+                <span>Simpan Matriks</span>
               </button>
+
               <button
                 type="button"
                 onClick={handleApplyStandardsToClasses}
                 disabled={busyAction}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-md shadow-blue-600/20 transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-md shadow-blue-600/20 transition-colors"
               >
                 <Sparkles className="w-4 h-4" />
                 <span>🚀 Terapkan ke Seluruh {classes.length} Rombel</span>
