@@ -943,6 +943,101 @@ export default function AdminScheduleDashboard() {
     );
   }, [selectedRangeSlots]);
 
+  const assignmentScheduledCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of schedules) {
+      if (s.classGroupId && s.subjectId) {
+        const key = `${s.classGroupId}_${s.subjectId}_${s.teacherId || ""}`;
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    }
+    return map;
+  }, [schedules]);
+
+  // Data Pilihan Modal yang difilter HANYA dari Beban Mengajar (TeachingAssignment) yang sudah ada
+  const modalAvailableClasses = useMemo(() => {
+    if (!showScheduleModal) return classes;
+    const classIdWithAssignments = new Set(assignments.map((a) => a.classGroupId));
+    const list = classes.filter((c) => classIdWithAssignments.has(c.id));
+    return list.length > 0 ? list : classes;
+  }, [showScheduleModal, classes, assignments]);
+
+  const modalAvailableSubjects = useMemo(() => {
+    if (!showScheduleModal || !scheduleForm.classGroupId) return subjects;
+    const classAssignments = assignments.filter(
+      (a) => a.classGroupId === scheduleForm.classGroupId
+    );
+    if (classAssignments.length === 0) return subjects;
+
+    const subjectMap = new Map<string, any>();
+    for (const a of classAssignments) {
+      if (a.subject && !subjectMap.has(a.subjectId)) {
+        const scheduled =
+          assignmentScheduledCountMap.get(
+            `${a.classGroupId}_${a.subjectId}_${a.teacherId || ""}`
+          ) || 0;
+        const remaining = Math.max(0, (a.totalPeriods || 0) - scheduled);
+        subjectMap.set(a.subjectId, {
+          ...a.subject,
+          assignedTeacherId: a.teacherId,
+          assignedTeacherName: a.teacher?.name || "Belum Ada Guru",
+          totalPeriods: a.totalPeriods,
+          remaining,
+          preferredRoomId: a.preferredRoomId,
+        });
+      }
+    }
+    return Array.from(subjectMap.values());
+  }, [
+    showScheduleModal,
+    scheduleForm.classGroupId,
+    assignments,
+    subjects,
+    assignmentScheduledCountMap,
+  ]);
+
+  const modalAvailableTeachers = useMemo(() => {
+    if (!showScheduleModal || !scheduleForm.classGroupId || !scheduleForm.subjectId) {
+      return teachers;
+    }
+    const matchedAssignments = assignments.filter(
+      (a) =>
+        a.classGroupId === scheduleForm.classGroupId &&
+        a.subjectId === scheduleForm.subjectId
+    );
+    const assignedTeacherIds = matchedAssignments
+      .map((a) => a.teacherId)
+      .filter((id): id is string => Boolean(id));
+
+    if (assignedTeacherIds.length === 0) return teachers;
+    const assignedList = teachers.filter((t) => assignedTeacherIds.includes(t.id));
+    return assignedList.length > 0 ? assignedList : teachers;
+  }, [
+    showScheduleModal,
+    scheduleForm.classGroupId,
+    scheduleForm.subjectId,
+    assignments,
+    teachers,
+  ]);
+
+  const selectedModalAssignment = useMemo(() => {
+    if (!scheduleForm.classGroupId || !scheduleForm.subjectId) return null;
+    return (
+      assignments.find(
+        (a) =>
+          a.classGroupId === scheduleForm.classGroupId &&
+          a.subjectId === scheduleForm.subjectId &&
+          (!scheduleForm.teacherId || a.teacherId === scheduleForm.teacherId)
+      ) ||
+      assignments.find(
+        (a) =>
+          a.classGroupId === scheduleForm.classGroupId &&
+          a.subjectId === scheduleForm.subjectId
+      ) ||
+      null
+    );
+  }, [assignments, scheduleForm.classGroupId, scheduleForm.subjectId, scheduleForm.teacherId]);
+
   const openAddScheduleModal = (dayId?: string, slotId?: string) => {
     const defaultDay = dayId
       ? activeDays.find((d) => d.id === dayId)
@@ -954,18 +1049,23 @@ export default function AdminScheduleDashboard() {
     const defaultClassId =
       gridFilterMode === "CLASS" && gridFilterId
         ? gridFilterId
-        : classes[0]?.id || "";
+        : modalAvailableClasses[0]?.id || classes[0]?.id || "";
     const defaultClassObj = classes.find((c) => c.id === defaultClassId);
 
+    const matchedClassAssignment =
+      assignments.find((a) => a.classGroupId === defaultClassId && a.teacherId) ||
+      assignments.find((a) => a.classGroupId === defaultClassId);
+
+    const defaultSubjectId = matchedClassAssignment?.subjectId || subjects[0]?.id || "";
     const defaultTeacherId =
-      gridFilterMode === "TEACHER" && gridFilterId
-        ? gridFilterId
-        : teachers[0]?.id || "";
+      matchedClassAssignment?.teacherId ||
+      (gridFilterMode === "TEACHER" && gridFilterId ? gridFilterId : teachers[0]?.id || "");
 
     const defaultRoomId =
-      gridFilterMode === "ROOM" && gridFilterId
+      matchedClassAssignment?.preferredRoomId ||
+      (gridFilterMode === "ROOM" && gridFilterId
         ? gridFilterId
-        : defaultClassObj?.defaultRoomId || rooms[0]?.id || "";
+        : defaultClassObj?.defaultRoomId || rooms[0]?.id || "");
 
     setScheduleForm({
       id: undefined,
@@ -973,7 +1073,7 @@ export default function AdminScheduleDashboard() {
       timeSlotId: defaultSlot?.id || "",
       endSlotId: defaultSlot?.id || "",
       classGroupId: defaultClassId,
-      subjectId: subjects[0]?.id || "",
+      subjectId: defaultSubjectId,
       teacherId: defaultTeacherId,
       roomId: defaultRoomId,
       notes: "",
@@ -1549,18 +1649,6 @@ export default function AdminScheduleDashboard() {
     for (const s of schedules) {
       if (s.teacherId) {
         map.set(s.teacherId, (map.get(s.teacherId) || 0) + 1);
-      }
-    }
-    return map;
-  }, [schedules, activeTab]);
-
-  const assignmentScheduledCountMap = useMemo(() => {
-    if (activeTab !== "assignments") return new Map<string, number>();
-    const map = new Map<string, number>();
-    for (const s of schedules) {
-      if (s.classGroupId && s.subjectId) {
-        const key = `${s.classGroupId}_${s.subjectId}_${s.teacherId || ""}`;
-        map.set(key, (map.get(key) || 0) + 1);
       }
     }
     return map;
@@ -4276,7 +4364,7 @@ export default function AdminScheduleDashboard() {
                     Kelas / Rombel *
                   </label>
                   <SearchableSelect
-                    options={classes.map((c) => ({
+                    options={modalAvailableClasses.map((c) => ({
                       value: c.id,
                       label: c.name,
                       badge: c.grade,
@@ -4285,10 +4373,15 @@ export default function AdminScheduleDashboard() {
                     value={scheduleForm.classGroupId}
                     onChange={(val) => {
                       const cls = classes.find((c) => c.id === val);
+                      const matched =
+                        assignments.find((a) => a.classGroupId === val && a.teacherId) ||
+                        assignments.find((a) => a.classGroupId === val);
                       setScheduleForm({
                         ...scheduleForm,
                         classGroupId: val,
-                        roomId: cls?.defaultRoomId || scheduleForm.roomId,
+                        subjectId: matched?.subjectId || "",
+                        teacherId: matched?.teacherId || "",
+                        roomId: matched?.preferredRoomId || cls?.defaultRoomId || scheduleForm.roomId,
                       });
                     }}
                     placeholder="-- Pilih Kelas --"
@@ -4322,31 +4415,37 @@ export default function AdminScheduleDashboard() {
               <div className="grid grid-cols-2 gap-3.5">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Mata Pelajaran *
+                    Mata Pelajaran (Dari Beban Mengajar) *
                   </label>
                   <SearchableSelect
-                    options={subjects.map((s) => ({
+                    options={modalAvailableSubjects.map((s: any) => ({
                       value: s.id,
                       label: s.name,
-                      badge: s.code,
-                      subLabel: s.category === "KEJURUAN" ? "Kejuruan" : "Umum",
+                      badge: `${s.code} • ${s.totalPeriods ?? 0} JP`,
+                      subLabel: `Guru: ${s.assignedTeacherName || "TBD"} | Sisa: ${s.remaining ?? 0} JP`,
                     }))}
                     value={scheduleForm.subjectId}
-                    onChange={(val) =>
-                      setScheduleForm({ ...scheduleForm, subjectId: val })
-                    }
+                    onChange={(val) => {
+                      const matchedSubject = modalAvailableSubjects.find((s: any) => s.id === val);
+                      setScheduleForm({
+                        ...scheduleForm,
+                        subjectId: val,
+                        teacherId: matchedSubject?.assignedTeacherId || scheduleForm.teacherId,
+                        roomId: matchedSubject?.preferredRoomId || scheduleForm.roomId,
+                      });
+                    }}
                     placeholder="-- Pilih Mata Pelajaran --"
-                    searchPlaceholder="Cari nama atau kode mapel..."
+                    searchPlaceholder="Cari mapel di kelas ini..."
                     required
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Guru Pengajar *
+                    Guru Pengajar (Sesuai Beban) *
                   </label>
                   <SearchableSelect
-                    options={teachers.map((t) => {
+                    options={modalAvailableTeachers.map((t) => {
                       const days = parseJsonNumberArray(t.activeDays)
                         .map((d) => DAY_NAMES[d]?.slice(0, 3))
                         .join(", ");
@@ -4367,6 +4466,39 @@ export default function AdminScheduleDashboard() {
                   />
                 </div>
               </div>
+
+              {/* Status Sisa Kuota Beban Mengajar */}
+              {selectedModalAssignment && (
+                <div className="p-3 bg-indigo-50/90 border border-indigo-200 rounded-xl flex items-center justify-between text-xs text-indigo-950">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-indigo-900">📌 Beban Mengajar:</span>
+                    <span className="font-semibold text-indigo-950">
+                      {selectedModalAssignment.subject?.name}
+                    </span>
+                    <span className="text-slate-500">
+                      ({selectedModalAssignment.teacher?.name || "Belum Ada Guru"})
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 font-semibold">
+                    <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
+                      Beban: {selectedModalAssignment.totalPeriods} JP
+                    </span>
+                    <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
+                      Sisa Kuota:{" "}
+                      {Math.max(
+                        0,
+                        selectedModalAssignment.totalPeriods -
+                          (assignmentScheduledCountMap.get(
+                            `${selectedModalAssignment.classGroupId}_${selectedModalAssignment.subjectId}_${
+                              selectedModalAssignment.teacherId || ""
+                            }`
+                          ) || 0)
+                      )}{" "}
+                      JP
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Box Hasil Validasi Real-Time */}
               {liveModalConflicts.length === 0 ? (
