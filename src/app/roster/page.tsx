@@ -46,6 +46,8 @@ type TabKey =
   | "assignments";
 
 export default function AdminScheduleDashboard() {
+  type MainTabKey = "kurikulum" | "referensi";
+  const [mainTab, setMainTab] = useState<MainTabKey>("kurikulum");
   const [activeTab, setActiveTab] = useState<TabKey>("schedule");
   const [loading, setLoading] = useState(true);
   const [busyAction, setBusyAction] = useState(false);
@@ -1990,44 +1992,137 @@ export default function AdminScheduleDashboard() {
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
-        {[
-          {
-            key: "schedule",
-            label: "1. Tabel Jadwal & Validasi Bentrok",
-            icon: Calendar,
-            badge: errorConflictList.length > 0 ? errorConflictList.length : undefined,
-          },
-          { key: "curriculum", label: "2. Struktur Kurikulum (Standar JP)", icon: Sparkles },
-          { key: "assignments", label: "3. Beban Mengajar (JP)", icon: Layers },
-          { key: "teachers", label: "4. Data Guru & Hari Aktif", icon: Users },
-          { key: "subjects", label: "5. Mata Pelajaran", icon: BookOpen },
-          { key: "rooms_classes", label: "6. Ruangan & Kelas", icon: DoorOpen },
-          { key: "days", label: "7. Hari Keaktifan & Jam Sekolah", icon: Clock },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key as TabKey)}
-              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
-                isActive
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-              {tab.badge !== undefined && (
-                <span className="px-2 py-0.5 text-[11px] font-bold bg-red-600 text-white rounded-full">
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      {/* Navigation 2 Tingkat: 2 Tab Utama (Kurikulum & Referensi) + Sub-Tab Pills */}
+      <div className="space-y-3">
+        {/* Tingkat 1: 2 Tab Utama */}
+        <div className="bg-slate-100 p-1.5 rounded-2xl flex items-center gap-1.5 border border-slate-200">
+          <button
+            type="button"
+            onClick={() => {
+              setMainTab("kurikulum");
+              if (!["schedule", "curriculum", "assignments"].includes(activeTab)) {
+                setActiveTab("schedule");
+              }
+            }}
+            className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 transition-all shadow-sm ${
+              mainTab === "kurikulum"
+                ? "bg-white text-slate-900 border border-slate-200 shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+            }`}
+          >
+            <Sparkles className={`w-4 h-4 ${mainTab === "kurikulum" ? "text-blue-600" : "text-slate-400"}`} />
+            <div className="text-left">
+              <div className="leading-tight flex items-center gap-2">
+                <span>1. Kurikulum & Pembelajaran</span>
+                {errorConflictList.length > 0 && (
+                  <span className="px-2 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded-full">
+                    {errorConflictList.length} Bentrok
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] font-normal text-slate-400 mt-0.5 hidden sm:block">
+                Struktur Kurikulum (JP), Beban Mengajar, Tabel Mengajar & Validasi
+              </p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMainTab("referensi");
+              if (!["teachers", "subjects", "rooms_classes", "days"].includes(activeTab)) {
+                setActiveTab("teachers");
+              }
+            }}
+            className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2.5 transition-all shadow-sm ${
+              mainTab === "referensi"
+                ? "bg-white text-slate-900 border border-slate-200 shadow-sm"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+            }`}
+          >
+            <Layers className={`w-4 h-4 ${mainTab === "referensi" ? "text-indigo-600" : "text-slate-400"}`} />
+            <div className="text-left">
+              <div className="leading-tight">2. Referensi Data Sekolah</div>
+              <p className="text-[10px] font-normal text-slate-400 mt-0.5 hidden sm:block">
+                Data Guru, Mata Pelajaran, Ruangan & Kelas, Hari & Jam
+              </p>
+            </div>
+          </button>
+        </div>
+
+        {/* Tingkat 2: Sub-Tab Navigasi Sesuai Tab Utama Terpilih */}
+        <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
+          {mainTab === "kurikulum" ? (
+            <>
+              {[
+                {
+                  key: "schedule",
+                  label: "Tabel Mengajar & Validasi",
+                  icon: Calendar,
+                  badge: errorConflictList.length > 0 ? errorConflictList.length : undefined,
+                },
+                {
+                  key: "curriculum",
+                  label: "Struktur Kurikulum (Standar JP)",
+                  icon: Sparkles,
+                },
+                {
+                  key: "assignments",
+                  label: "Beban Mengajar (Alokasi JP)",
+                  icon: Layers,
+                },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key as TabKey)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                      isActive
+                        ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
+                    {tab.badge !== undefined && (
+                      <span className="px-2 py-0.5 text-[11px] font-bold bg-red-600 text-white rounded-full">
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </>
+          ) : (
+            <>
+              {[
+                { key: "teachers", label: "Data Guru & Hari Aktif", icon: Users },
+                { key: "subjects", label: "Daftar Mata Pelajaran", icon: BookOpen },
+                { key: "rooms_classes", label: "Ruangan dan Kelas", icon: DoorOpen },
+                { key: "days", label: "Hari Keaktifan & Jam Sekolah", icon: Clock },
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key as TabKey)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+                      isActive
+                        ? "bg-indigo-600 text-white shadow-sm shadow-indigo-500/20"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
       </div>
 
       {/* ==================== TAB 1: JADWAL & VALIDASI BENTROK ==================== */}
