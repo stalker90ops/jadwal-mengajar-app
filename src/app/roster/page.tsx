@@ -1045,6 +1045,32 @@ export default function AdminScheduleDashboard() {
     }
   };
 
+  const handleClearAllAssignments = async () => {
+    if (
+      !confirm(
+        `Yakin ingin mengosongkan seluruh (${assignments.length}) alokasi beban mengajar? Tindakan ini tidak dapat dibatalkan.`
+      )
+    )
+      return;
+    setBusyAction(true);
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entity: "assignment", action: "clear_all" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showMessage("success", data.message || "Seluruh beban mengajar berhasil dikosongkan.");
+        await loadAllData();
+      } else {
+        showMessage("error", data.error || "Gagal mengosongkan beban mengajar");
+      }
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
   // ==================== IMPORT CSV / EXCEL ====================
   const triggerImportFile = (entity: string) => {
     setImportTargetEntity(entity);
@@ -3189,14 +3215,27 @@ export default function AdminScheduleDashboard() {
                   Guru dapat dipilih langsung melalui menu dropdown di setiap baris tabel.
                 </p>
               </div>
-              <button
-                onClick={handleAutoGenerate}
-                disabled={busyAction}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Susun Otomatis Sekarang</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {assignments.length > 0 && (
+                  <button
+                    onClick={handleClearAllAssignments}
+                    disabled={busyAction}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors"
+                    title="Kosongkan seluruh alokasi beban mengajar"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Kosongkan Semua</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleAutoGenerate}
+                  disabled={busyAction}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Susun Otomatis Sekarang</span>
+                </button>
+              </div>
             </div>
 
             {/* Filter & Pencarian Cepat */}

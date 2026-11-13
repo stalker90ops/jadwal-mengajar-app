@@ -529,6 +529,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true });
       }
 
+      if (action === 'clear_all') {
+        const deleted = await prisma.teachingAssignment.deleteMany({});
+        return NextResponse.json({
+          success: true,
+          message: `Berhasil mengosongkan seluruh (${deleted.count}) data alokasi beban mengajar.`,
+        });
+      }
+
       if (action === 'assign_teacher') {
         // Cepat pasang / ganti guru pada beban mengajar tertentu
         const updated = await prisma.teachingAssignment.update({
