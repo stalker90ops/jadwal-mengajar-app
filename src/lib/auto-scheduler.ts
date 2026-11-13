@@ -16,6 +16,8 @@ export interface SchedulerDay {
   }[];
 }
 
+export type SchedulerTimeSlot = SchedulerDay['timeSlots'][number];
+
 export interface SchedulerTeacher {
   id: string;
   code: string;
@@ -128,7 +130,8 @@ export function generateConflictFreeSchedule(params: {
   // Urutkan assignment dari yang paling ketat kendalanya (Most-Constrained Variable First):
   // 1. Guru dengan jumlah hari aktif paling sedikit
   // 2. Mapel yang butuh Lab / preferredRoom
-  // 3. Jumlah totalPeriods terbesar
+  // 3. Mapel umum dengan blok jam wajib berurutan (prioritas agar dapat blok utuh tidak terjepit)
+  // 4. Jumlah totalPeriods terbesar
   const sortedAssignments = [...assignments].sort((a, b) => {
     const aDays = a.teacher ? parseJsonNumberArray(a.teacher.activeDays).length : 7;
     const bDays = b.teacher ? parseJsonNumberArray(b.teacher.activeDays).length : 7;
@@ -138,6 +141,10 @@ export function generateConflictFreeSchedule(params: {
     const bSpecialRoom = b.preferredRoomId || b.subject.requiresLab ? 1 : 0;
     if (aSpecialRoom !== bSpecialRoom) return bSpecialRoom - aSpecialRoom;
 
+    const aIsUmum = a.subject.category === 'UMUM' ? 1 : 0;
+    const bIsUmum = b.subject.category === 'UMUM' ? 1 : 0;
+    if (aIsUmum !== bIsUmum) return bIsUmum - aIsUmum;
+
     return b.totalPeriods - a.totalPeriods;
   });
 
@@ -146,11 +153,14 @@ export function generateConflictFreeSchedule(params: {
   let totalRequestedPeriods = 0;
   let totalScheduledPeriods = 0;
 
-  // Fungsi memilih ruangan yang tidak bentrok pada timeSlotId tertentu
-  function findAvailableRoom(assignment: SchedulerAssignment, timeSlotId: string): string | null {
+  // Fungsi memilih ruangan konsisten yang kosong untuk seluruh slot dalam satu blok berurutan
+  function findBlockRoom(
+    assignment: SchedulerAssignment,
+    candidateSlots: SchedulerTimeSlot[]
+  ): string | null {
     // 1. Jika ada preferredRoomId pada beban mengajar
     if (assignment.preferredRoomId) {
-      if (!busyRoomSlot.has(`${timeSlotId}_${assignment.preferredRoomId}`)) {
+      if (candidateSlots.every((ts) => !busyRoomSlot.has(`${ts.id}_${assignment.preferredRoomId}`))) {
         return assignment.preferredRoomId;
       }
     }
@@ -159,7 +169,7 @@ export function generateConflictFreeSchedule(params: {
     if (assignment.subject.requiresLab) {
       const labRooms = rooms.filter((r) => r.type.toUpperCase().includes('LAB'));
       for (const lab of labRooms) {
-        if (!busyRoomSlot.has(`${timeSlotId}_${lab.id}`)) {
+        if (candidateSlots.every((ts) => !busyRoomSlot.has(`${ts.id}_${lab.id}`))) {
           return lab.id;
         }
       }
@@ -167,20 +177,22 @@ export function generateConflictFreeSchedule(params: {
 
     // 3. Gunakan ruangan default milik Kelas/Rombel
     if (assignment.classGroup.defaultRoomId) {
-      if (!busyRoomSlot.has(`${timeSlotId}_${assignment.classGroup.defaultRoomId}`)) {
+      if (candidateSlots.every((ts) => !busyRoomSlot.has(`${ts.id}_${assignment.classGroup.defaultRoomId}`))) {
         return assignment.classGroup.defaultRoomId;
       }
     }
 
-    // 4. Cari ruangan teori (atau ruangan apa saja yang kosong)
+    // 4. Cari ruangan teori
     const theoryRooms = rooms.filter((r) => r.type === 'TEORI');
     for (const r of theoryRooms) {
-      if (!busyRoomSlot.has(`${timeSlotId}_${r.id}`)) {
+      if (candidateSlots.every((ts) => !busyRoomSlot.has(`${ts.id}_${r.id}`))) {
         return r.id;
       }
     }
+
+    // 5. Ruangan apa saja yang kosong untuk seluruh blok
     for (const r of rooms) {
-      if (!busyRoomSlot.has(`${timeSlotId}_${r.id}`)) {
+      if (candidateSlots.every((ts) => !busyRoomSlot.has(`${ts.id}_${r.id}`))) {
         return r.id;
       }
     }
@@ -188,10 +200,11 @@ export function generateConflictFreeSchedule(params: {
     return null;
   }
 
-  function isSlotValidForAssignment(
+  // Fungsi pengecekan apakah kandidat blok slot berurutan valid untuk guru dan kelas
+  function canPlaceBlock(
     assignment: SchedulerAssignment,
     day: SchedulerDay,
-    timeSlotId: string
+    candidateSlots: SchedulerTimeSlot[]
   ): { ok: boolean; roomId: string | null } {
     if (assignment.teacher && assignment.teacherId) {
       const teacherActiveDays = parseJsonNumberArray(assignment.teacher.activeDays);
@@ -200,20 +213,23 @@ export function generateConflictFreeSchedule(params: {
       }
 
       const teacherUnavailable = parseJsonStringArray(assignment.teacher.unavailableSlots);
-      if (teacherUnavailable.includes(timeSlotId)) {
-        return { ok: false, roomId: null };
+      for (const ts of candidateSlots) {
+        if (teacherUnavailable.includes(ts.id)) {
+          return { ok: false, roomId: null };
+        }
+        if (busyTeacherSlot.has(`${ts.id}_${assignment.teacherId}`)) {
+          return { ok: false, roomId: null };
+        }
       }
+    }
 
-      if (busyTeacherSlot.has(`${timeSlotId}_${assignment.teacherId}`)) {
+    for (const ts of candidateSlots) {
+      if (busyClassSlot.has(`${ts.id}_${assignment.classGroupId}`)) {
         return { ok: false, roomId: null };
       }
     }
 
-    if (busyClassSlot.has(`${timeSlotId}_${assignment.classGroupId}`)) {
-      return { ok: false, roomId: null };
-    }
-
-    const roomId = findAvailableRoom(assignment, timeSlotId);
+    const roomId = findBlockRoom(assignment, candidateSlots);
     if (!roomId) {
       return { ok: false, roomId: null };
     }
@@ -248,103 +264,154 @@ export function generateConflictFreeSchedule(params: {
     totalRequestedPeriods += remaining;
     let scheduledForThis = 0;
 
-    // Pecah ke dalam blok pertemuan (misal 4 JP dengan maxPerDay=2 -> [2, 2])
-    const maxBlock = Math.max(1, assignment.maxPerDay || 2);
+    if (remaining <= 0) continue;
 
-    // Tahap 1: Coba alokasikan blok jam berurutan di hari yang belum ada mapel ini
-    for (const day of activeDays) {
-      if (remaining <= 0) break;
+    const isGeneral = assignment.subject.category === 'UMUM';
 
-      if (assignment.teacher) {
-        const teacherActiveDays = parseJsonNumberArray(assignment.teacher.activeDays);
-        if (!teacherActiveDays.includes(day.dayNumber)) continue;
+    // Rancang rencana blok jam berurutan (tidak boleh ada mapel yang dipecah tercecer 1 JP)
+    // Sesuai preferensi: Mapel umum 4 JP diutamakan 1 hari 4 JP berurutan (fallback: 2 JP + 2 JP berurutan di 2 hari)
+    let blockPlans: number[][] = [];
+    if (isGeneral) {
+      if (remaining === 4) {
+        blockPlans = [[4], [2, 2]];
+      } else if (remaining === 3) {
+        blockPlans = [[3]];
+      } else if (remaining === 2) {
+        blockPlans = [[2]];
+      } else if (remaining === 1) {
+        blockPlans = [[1]];
+      } else if (remaining >= 6) {
+        blockPlans = [[remaining], [3, 3], [4, 2]];
+      } else {
+        blockPlans = [[remaining]];
       }
+    } else {
+      // Mapel Kejuruan / Produktif / Lainnya (blok besar, minimal 2 JP)
+      if (remaining >= 6) {
+        blockPlans = [[remaining], [4, remaining - 4], [3, 3]];
+      } else if (remaining === 5) {
+        blockPlans = [[3, 2]];
+      } else if (remaining === 4) {
+        blockPlans = [[4], [2, 2]];
+      } else if (remaining === 3) {
+        blockPlans = [[3]];
+      } else if (remaining === 2) {
+        blockPlans = [[2]];
+      } else {
+        blockPlans = [[remaining]];
+      }
+    }
 
-      const daySubKey = `${day.id}_${assignment.classGroupId}_${assignment.subjectId}`;
-      const existingToday = classDaySubjectCount.get(daySubKey) || 0;
-      if (existingToday >= maxBlock) continue;
+    // Fungsi penempatan blok jam berurutan secara atomik (rollback jika blok gagal lengkap)
+    const tryScheduleBlocks = (blockPlan: number[]): boolean => {
+      const tempGenerated: GeneratedSlotItem[] = [];
+      const tempBusyTeacher = new Set<string>();
+      const tempBusyClass = new Set<string>();
+      const tempBusyRoom = new Set<string>();
+      const tempClassDayCount = new Map<string, number>();
 
-      const desiredInDay = Math.min(remaining, maxBlock - existingToday);
-      const slots = day.teachingSlots;
+      let successAll = true;
 
-      // Cari blok berurutan sepanjang desiredInDay (atau turun ke 1 jika tidak ada)
-      let placedInDay = false;
-      for (let blockSize = desiredInDay; blockSize >= 1; blockSize--) {
-        for (let startIdx = 0; startIdx <= slots.length - blockSize; startIdx++) {
-          const candidateSlots = slots.slice(startIdx, startIdx + blockSize);
-          const chosenRooms: string[] = [];
-          let allValid = true;
+      for (const blockSize of blockPlan) {
+        let placedBlock = false;
 
-          for (const ts of candidateSlots) {
-            const check = isSlotValidForAssignment(assignment, day, ts.id);
-            if (!check.ok || !check.roomId) {
-              allValid = false;
+        for (const day of activeDays) {
+          if (assignment.teacher) {
+            const teacherActiveDays = parseJsonNumberArray(assignment.teacher.activeDays);
+            if (!teacherActiveDays.includes(day.dayNumber)) continue;
+          }
+
+          const daySubKey = `${day.id}_${assignment.classGroupId}_${assignment.subjectId}`;
+          const countToday =
+            (classDaySubjectCount.get(daySubKey) || 0) +
+            (tempClassDayCount.get(daySubKey) || 0);
+
+          // Jika ada lebih dari 1 blok pertemuan dalam seminggu, sebar ke hari yang berbeda
+          if (countToday > 0 && blockPlan.length > 1) {
+            continue;
+          }
+
+          const slots = day.teachingSlots;
+
+          // Cari blok slot yang benar-benar berurutan sepanjang blockSize
+          for (let startIdx = 0; startIdx <= slots.length - blockSize; startIdx++) {
+            const candidateSlots = slots.slice(startIdx, startIdx + blockSize);
+
+            const hasConflictWithTemp = candidateSlots.some(
+              (ts) =>
+                tempBusyTeacher.has(`${ts.id}_${assignment.teacherId}`) ||
+                tempBusyClass.has(`${ts.id}_${assignment.classGroupId}`)
+            );
+            if (hasConflictWithTemp) continue;
+
+            const check = canPlaceBlock(assignment, day, candidateSlots);
+            if (check.ok && check.roomId) {
+              const roomId = check.roomId;
+              if (candidateSlots.some((ts) => tempBusyRoom.has(`${ts.id}_${roomId}`))) {
+                continue;
+              }
+
+              for (const ts of candidateSlots) {
+                tempGenerated.push({
+                  activeDayId: day.id,
+                  timeSlotId: ts.id,
+                  teacherId: assignment.teacherId!,
+                  subjectId: assignment.subjectId,
+                  classGroupId: assignment.classGroupId,
+                  roomId,
+                });
+                tempBusyTeacher.add(`${ts.id}_${assignment.teacherId}`);
+                tempBusyClass.add(`${ts.id}_${assignment.classGroupId}`);
+                tempBusyRoom.add(`${ts.id}_${roomId}`);
+              }
+
+              tempClassDayCount.set(daySubKey, countToday + blockSize);
+              placedBlock = true;
               break;
             }
-            chosenRooms.push(check.roomId);
           }
 
-          if (allValid) {
-            for (let k = 0; k < candidateSlots.length; k++) {
-              const ts = candidateSlots[k];
-              const roomId = chosenRooms[k];
-              generated.push({
-                activeDayId: day.id,
-                timeSlotId: ts.id,
-                teacherId: assignment.teacherId,
-                subjectId: assignment.subjectId,
-                classGroupId: assignment.classGroupId,
-                roomId,
-              });
-              busyTeacherSlot.add(`${ts.id}_${assignment.teacherId}`);
-              busyClassSlot.add(`${ts.id}_${assignment.classGroupId}`);
-              busyRoomSlot.add(`${ts.id}_${roomId}`);
-              teacherTotalCount.set(
-                assignment.teacherId,
-                (teacherTotalCount.get(assignment.teacherId) || 0) + 1
-              );
-              classDaySubjectCount.set(daySubKey, (classDaySubjectCount.get(daySubKey) || 0) + 1);
-              remaining--;
-              scheduledForThis++;
-              totalScheduledPeriods++;
-            }
-            placedInDay = true;
-            break;
-          }
+          if (placedBlock) break;
         }
-        if (placedInDay) break;
+
+        if (!placedBlock) {
+          successAll = false;
+          break;
+        }
       }
-    }
 
-    // Tahap 2: Jika masih ada sisa JP yang belum terjadwal, cari slot kosong mana saja di hari aktif guru
-    if (remaining > 0) {
-      for (const day of activeDays) {
-        if (remaining <= 0) break;
-        for (const ts of day.teachingSlots) {
-          if (remaining <= 0) break;
-          const check = isSlotValidForAssignment(assignment, day, ts.id);
-          if (check.ok && check.roomId) {
-            generated.push({
-              activeDayId: day.id,
-              timeSlotId: ts.id,
-              teacherId: assignment.teacherId,
-              subjectId: assignment.subjectId,
-              classGroupId: assignment.classGroupId,
-              roomId: check.roomId,
-            });
-            busyTeacherSlot.add(`${ts.id}_${assignment.teacherId}`);
-            busyClassSlot.add(`${ts.id}_${assignment.classGroupId}`);
-            busyRoomSlot.add(`${ts.id}_${check.roomId}`);
-            remaining--;
-            scheduledForThis++;
-            totalScheduledPeriods++;
-          }
+      if (successAll) {
+        for (const g of tempGenerated) {
+          generated.push(g);
+          busyTeacherSlot.add(`${g.timeSlotId}_${g.teacherId}`);
+          busyClassSlot.add(`${g.timeSlotId}_${g.classGroupId}`);
+          busyRoomSlot.add(`${g.timeSlotId}_${g.roomId}`);
+          teacherTotalCount.set(g.teacherId, (teacherTotalCount.get(g.teacherId) || 0) + 1);
+          const key = `${g.activeDayId}_${g.classGroupId}_${g.subjectId}`;
+          classDaySubjectCount.set(key, (classDaySubjectCount.get(key) || 0) + 1);
+          remaining--;
+          scheduledForThis++;
+          totalScheduledPeriods++;
         }
+        return true;
+      }
+
+      return false;
+    };
+
+    // Eksekusi pemilihan rencana blok
+    let isScheduled = false;
+    for (const plan of blockPlans) {
+      if (tryScheduleBlocks(plan)) {
+        isScheduled = true;
+        break;
       }
     }
 
     if (remaining > 0) {
-      const teacherActiveDays = assignment.teacher ? parseJsonNumberArray(assignment.teacher.activeDays) : [1, 2, 3, 4, 5, 6];
+      const teacherActiveDays = assignment.teacher
+        ? parseJsonNumberArray(assignment.teacher.activeDays)
+        : [1, 2, 3, 4, 5, 6];
       const teacherName = assignment.teacher ? assignment.teacher.name : '(Belum Ditentukan)';
       unscheduled.push({
         assignmentId: assignment.id,
@@ -358,7 +425,7 @@ export function generateConflictFreeSchedule(params: {
             ? `Guru ${teacherName} tidak memiliki hari aktif sama sekali.`
             : rooms.length === 0
             ? 'Belum ada data Ruangan yang tersedia.'
-            : `Slot jam untuk Kelas ${assignment.classGroup.name} / ${teacherName} sudah penuh.`,
+            : `Mapel ${assignment.subject.name} (${assignment.subject.category}) membutuhkan ${blockPlans[0]?.join('+') || assignment.totalPeriods} JP berurutan untuk kelas ${assignment.classGroup.name}, namun slot berurutan tidak tersedia di hari aktif guru.`,
       });
     }
   }
