@@ -385,15 +385,43 @@ export default function AdminScheduleDashboard() {
     });
 
     try {
-      // Pastikan standar terbaru tersimpan dulu
-      await handleSaveCurriculumStandards();
+      // 1. Simpan matriks standar saat ini terlebih dahulu secara massal
+      const standardsList: any[] = [];
+      const commonSubjects = subjects.filter((s) => s.category === "UMUM");
+      const grades = ["X", "XI", "XII"];
+
+      for (const s of commonSubjects) {
+        for (const g of grades) {
+          const key = `${s.id}_${g}`;
+          const item = standardInputs[key];
+          if (item && item.totalPeriods !== undefined) {
+            standardsList.push({
+              subjectId: s.id,
+              grade: g,
+              totalPeriods: Number(item.totalPeriods),
+              maxPerDay: Number(item.maxPerDay) || 2,
+            });
+          }
+        }
+      }
+
+      await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "curriculum_standard",
+          action: "save_batch",
+          data: { standards: standardsList },
+        }),
+      });
 
       setProgressModal((prev) => ({
         ...prev,
-        progressPercent: 65,
-        activeStepIndex: 2,
+        progressPercent: 55,
+        activeStepIndex: 1,
       }));
 
+      // 2. Terapkan secara batch massal ke rombel
       const res = await fetch("/api/master", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -403,6 +431,13 @@ export default function AdminScheduleDashboard() {
           data: {},
         }),
       });
+
+      setProgressModal((prev) => ({
+        ...prev,
+        progressPercent: 85,
+        activeStepIndex: 2,
+      }));
+
       const data = await res.json();
       if (res.ok) {
         await loadAllData();
