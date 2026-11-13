@@ -203,7 +203,9 @@ export async function POST(request: Request) {
             },
           }),
           prisma.teacher.findMany(),
-          prisma.subject.findMany(),
+          prisma.subject.findMany({
+            include: { curriculumStandards: true },
+          }),
           prisma.room.findMany(),
           prisma.classGroup.findMany(),
           prisma.teachingAssignment.findMany({
@@ -234,7 +236,22 @@ export async function POST(request: Request) {
         subjects,
         rooms,
         classes,
-        assignments,
+        assignments: assignments.map((a) => ({
+          ...a,
+          // Pass preferredTimeSlotPeriods dari CurriculumStandard yang sesuai grade rombel
+          preferredTimeSlotPeriods: (() => {
+            // Ambil dari subject.curriculumStandards jika ada (di-include dari Prisma)
+            const subjectWithStandards = subjects.find((s) => s.id === a.subjectId) as any;
+            const grade = a.classGroup?.grade;
+            if (subjectWithStandards?.curriculumStandards && grade) {
+              const std = subjectWithStandards.curriculumStandards.find(
+                (cs: any) => cs.grade === grade
+              );
+              return std?.preferredTimeSlotPeriods || '[]';
+            }
+            return '[]';
+          })(),
+        })),
         lockedSchedules: lockedRows,
       });
 

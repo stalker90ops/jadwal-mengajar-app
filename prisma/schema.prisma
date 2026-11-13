@@ -74,13 +74,15 @@ model Subject {
 
 // Standar Jam Belajar per Tingkat Kelas (Khusus Mapel Umum)
 model CurriculumStandard {
-  id           String   @id @default(uuid())
-  subjectId    String
-  subject      Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  grade        String   // "X", "XI", "XII"
-  totalPeriods Int      @default(2) // Jam pelajaran per minggu untuk tingkatan ini
-  maxPerDay    Int      @default(2) // Maksimal JP per hari pertemuan
-  createdAt    DateTime @default(now())
+  id                       String   @id @default(uuid())
+  subjectId                String
+  subject                  Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  grade                    String   // "X", "XI", "XII"
+  totalPeriods             Int      @default(2) // Jam pelajaran per minggu untuk tingkatan ini
+  maxPerDay                Int      @default(2) // Maksimal JP per hari pertemuan
+  // JSON array berisi periodNumber slot jam pilihan, misal "[1,2,3]" (kosong = bebas semua slot)
+  preferredTimeSlotPeriods String   @default("[]")
+  createdAt                DateTime @default(now())
 
   @@unique([subjectId, grade])
 }

@@ -199,6 +199,9 @@ export default function AdminScheduleDashboard() {
   // State Matriks Standar Kurikulum { [subjectId_grade]: { totalPeriods, maxPerDay } }
   const [standardInputs, setStandardInputs] = useState<Record<string, { totalPeriods: number; maxPerDay: number }>>({});
 
+  // State Slot Pinning per subjectId_grade: angka periodNumber yang dipilih, misal [1,2,3]
+  const [slotPinInputs, setSlotPinInputs] = useState<Record<string, number[]>>({});
+
   // Filter & Search Beban Mengajar (Hanya Tampilkan Kelas yang Dipilih untuk Menghemat Memori)
   const [assignmentFilterClass, setAssignmentFilterClass] = useState<string>("");
   const [assignmentFilterTeacherStatus, setAssignmentFilterTeacherStatus] = useState<string>("ALL");
@@ -232,13 +235,21 @@ export default function AdminScheduleDashboard() {
   useEffect(() => {
     // Bangun map standar yang sudah ada
     const initial: Record<string, { totalPeriods: number; maxPerDay: number }> = {};
+    const initialPins: Record<string, number[]> = {};
     for (const std of curriculumStandards) {
       initial[`${std.subjectId}_${std.grade}`] = {
         totalPeriods: std.totalPeriods,
         maxPerDay: std.maxPerDay,
       };
+      try {
+        const pins = JSON.parse(std.preferredTimeSlotPeriods || '[]');
+        initialPins[`${std.subjectId}_${std.grade}`] = Array.isArray(pins) ? pins : [];
+      } catch {
+        initialPins[`${std.subjectId}_${std.grade}`] = [];
+      }
     }
     setStandardInputs(initial);
+    setSlotPinInputs(initialPins);
   }, [curriculumStandards]);
 
   const handleStandardChange = (subjectId: string, grade: string, field: "totalPeriods" | "maxPerDay", val: number) => {
@@ -250,6 +261,58 @@ export default function AdminScheduleDashboard() {
         maxPerDay: field === "maxPerDay" ? val : prev[key]?.maxPerDay || 2,
       },
     }));
+  };
+
+  const toggleSlotPin = (subjectId: string, grade: string, periodNumber: number) => {
+    const key = `${subjectId}_${grade}`;
+    const maxAllowedPeriods = standardInputs[key]?.totalPeriods ?? 0;
+
+    if (maxAllowedPeriods <= 0) {
+      showMessage("info", `Tentukan alokasi JP untuk Tingkat ${grade} terlebih dahulu sebelum memilih slot jam.`);
+      return;
+    }
+
+    setSlotPinInputs((prev) => {
+      const current = prev[key] || [];
+      const exists = current.includes(periodNumber);
+      if (exists) {
+        return {
+          ...prev,
+          [key]: current.filter((p) => p !== periodNumber),
+        };
+      } else {
+        if (current.length >= maxAllowedPeriods) {
+          showMessage("info", `Maksimal memilih ${maxAllowedPeriods} slot jam sesuai alokasi JP Tingkat ${grade} (${maxAllowedPeriods} JP).`);
+          return prev;
+        }
+        return {
+          ...prev,
+          [key]: [...current, periodNumber].sort((a, b) => a - b),
+        };
+      }
+    });
+  };
+
+  const handleSaveSlotPins = async (subjectId: string) => {
+    const commonSubject = subjects.find((s) => s.id === subjectId);
+    if (!commonSubject) return;
+    const pins = ["X", "XI", "XII"].map((grade) => ({
+      subjectId,
+      grade,
+      preferredTimeSlotPeriods: slotPinInputs[`${subjectId}_${grade}`] || [],
+    }));
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entity: "curriculum_standard", action: "save_slot_pins", data: { pins } }),
+      });
+      const result = await res.json();
+      if (res.ok) showMessage("success", result.message || "Slot jam pilihan disimpan.");
+      else showMessage("error", result.error || "Gagal menyimpan slot jam.");
+    } catch {
+      showMessage("error", "Gagal terhubung ke server.");
+    }
   };
 
   const handleDownloadCurriculumTemplate = () => {
@@ -304,6 +367,7 @@ export default function AdminScheduleDashboard() {
               grade: g,
               totalPeriods: Number(item.totalPeriods),
               maxPerDay: Number(item.maxPerDay) || 2,
+              preferredTimeSlotPeriods: slotPinInputs[key] || [],
             });
           }
         }
@@ -400,6 +464,7 @@ export default function AdminScheduleDashboard() {
               grade: g,
               totalPeriods: Number(item.totalPeriods),
               maxPerDay: Number(item.maxPerDay) || 2,
+              preferredTimeSlotPeriods: slotPinInputs[key] || [],
             });
           }
         }
@@ -1485,6 +1550,105 @@ export default function AdminScheduleDashboard() {
     [audit.conflictingScheduleIds]
   );
 
+  const conflictDetailsByScheduleId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    if (!audit?.conflicts) return map;
+    for (const c of audit.conflicts) {
+      for (const id of c.scheduleIds) {
+        const list = map.get(id) || [];
+        list.push(c.message);
+        map.set(id, list);
+      }
+    }
+    return map;
+  }, [audit.conflicts]);
+
+  // State Drag and Drop Jadwal Mengajar
+  const [draggedScheduleId, setDraggedScheduleId] = useState<string | null>(null);
+  const [dragOverCellKey, setDragOverCellKey] = useState<string | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, schedule: any) => {
+    setDraggedScheduleId(schedule.id);
+    e.dataTransfer.setData("text/plain", schedule.id);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent, cellKey: string, isBreak: boolean) => {
+    if (isBreak) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverCellKey !== cellKey) {
+      setDragOverCellKey(cellKey);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverCellKey(null);
+  };
+
+  const handleDropSchedule = async (e: React.DragEvent, targetDayId: string, targetTimeSlotId: string) => {
+    e.preventDefault();
+    setDragOverCellKey(null);
+    const scheduleId = draggedScheduleId;
+    setDraggedScheduleId(null);
+    if (!scheduleId) return;
+
+    const currentSchedule = schedules.find((s) => s.id === scheduleId);
+    if (!currentSchedule) return;
+
+    if (currentSchedule.activeDayId === targetDayId && currentSchedule.timeSlotId === targetTimeSlotId) {
+      return;
+    }
+
+    // Update optimistik di UI
+    setSchedules((prev) =>
+      prev.map((s) =>
+        s.id === scheduleId
+          ? { ...s, activeDayId: targetDayId, timeSlotId: targetTimeSlotId }
+          : s
+      )
+    );
+
+    try {
+      const res = await fetch("/api/roster/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update",
+          data: {
+            id: currentSchedule.id,
+            activeDayId: targetDayId,
+            timeSlotId: targetTimeSlotId,
+            teacherId: currentSchedule.teacherId,
+            subjectId: currentSchedule.subjectId,
+            classGroupId: currentSchedule.classGroupId,
+            roomId: currentSchedule.roomId,
+            notes: currentSchedule.notes,
+            isLocked: currentSchedule.isLocked,
+            force: true, // Simpan meskipun bentrok, agar bisa ditandai merah di tabel
+          },
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok) {
+        showMessage("error", resData.error || "Gagal menggeser jadwal.");
+        await loadAllData();
+      } else {
+        if (resData.conflicts && resData.conflicts.length > 0) {
+          const firstErr = resData.conflicts.find((c: any) => c.severity === "ERROR") || resData.conflicts[0];
+          showMessage("info", `Jadwal digeser, namun terdeteksi bentrok: ${firstErr.message}`);
+        } else {
+          showMessage("success", "Jadwal berhasil digeser!");
+        }
+        await loadAllData();
+      }
+    } catch {
+      showMessage("error", "Koneksi terputus saat menggeser jadwal.");
+      await loadAllData();
+    }
+  };
+
   const errorConflictList = useMemo(
     () => audit.conflicts.filter((c) => c.severity === "ERROR"),
     [audit.conflicts]
@@ -1945,47 +2109,97 @@ export default function AdminScheduleDashboard() {
 
                           const cellSchedules =
                             gridSchedulesByCell.get(`${day.id}_${daySlot.id}`) || [];
+                          const cellKey = `${day.id}_${daySlot.id}`;
+                          const isDragTarget = dragOverCellKey === cellKey;
 
                           return (
-                            <td key={day.id} className="p-2.5 border-r border-slate-200 align-top">
+                            <td
+                              key={day.id}
+                              onDragOver={(e) => handleDragOver(e, cellKey, daySlot.isBreak)}
+                              onDragLeave={handleDragLeave}
+                              onDrop={(e) => handleDropSchedule(e, day.id, daySlot.id)}
+                              className={`p-2.5 border-r border-slate-200 align-top transition-colors min-h-[90px] ${
+                                isDragTarget
+                                  ? "bg-blue-50/90 ring-2 ring-inset ring-blue-500 shadow-inner"
+                                  : "hover:bg-slate-50/40"
+                              }`}
+                            >
                               <div className="space-y-2">
                                 {cellSchedules.map((item) => {
                                   const isConflicting = conflictingScheduleIdSet.has(item.id);
+                                  const conflictReasons = conflictDetailsByScheduleId.get(item.id) || [];
+                                  const isBeingDragged = draggedScheduleId === item.id;
+
                                   return (
                                     <div
                                       key={item.id}
-                                      className={`p-2.5 rounded-xl border shadow-sm transition-all ${
-                                        isConflicting
-                                          ? "bg-red-50 border-red-500 ring-2 ring-red-300"
-                                          : "bg-white border-slate-200 hover:border-blue-300"
+                                      draggable={true}
+                                      onDragStart={(e) => handleDragStart(e, item)}
+                                      title="💡 Tahan & Drag kartu ini untuk memindahkan jadwal ke slot atau hari lain"
+                                      className={`p-2.5 rounded-xl border shadow-sm transition-all cursor-grab active:cursor-grabbing select-none ${
+                                        isBeingDragged
+                                          ? "opacity-30 scale-95 border-dashed border-blue-400"
+                                          : isConflicting
+                                          ? "bg-red-50/95 border-red-500 ring-2 ring-red-400 shadow-red-100"
+                                          : "bg-white border-slate-200 hover:border-blue-400 hover:shadow-md"
                                       }`}
                                       style={{
-                                        borderLeftWidth: "5px",
+                                        borderLeftWidth: "6px",
                                         borderLeftColor: isConflicting
                                           ? "#dc2626"
                                           : item.subject?.color || "#2563eb",
                                       }}
                                     >
                                       <div className="flex items-start justify-between gap-1">
-                                        <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                                        <span
+                                          className={`font-bold text-xs sm:text-sm ${
+                                            isConflicting ? "text-red-900" : "text-slate-900"
+                                          }`}
+                                        >
                                           {item.subject?.name}
                                         </span>
-                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                                        <span
+                                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                            isConflicting
+                                              ? "bg-red-200 text-red-900"
+                                              : "bg-slate-100 text-slate-700"
+                                          }`}
+                                        >
                                           {item.room?.code}
                                         </span>
                                       </div>
 
                                       <div className="mt-1 space-y-0.5 text-xs text-slate-600">
-                                        <div>👨‍🏫 {item.teacher?.name}</div>
-                                        <div className="font-semibold text-blue-700">
+                                        <div className={isConflicting ? "text-red-800 font-medium" : ""}>
+                                          👨‍🏫 {item.teacher?.name}
+                                        </div>
+                                        <div
+                                          className={`font-semibold ${
+                                            isConflicting ? "text-red-800" : "text-blue-700"
+                                          }`}
+                                        >
                                           🎓 {item.classGroup?.name}
                                         </div>
                                       </div>
 
+                                      {/* Tampilan Bentrok Mencolok (Warna Merah & Penjelasan Detail Penyebab Bentrok) */}
                                       {isConflicting && (
-                                        <div className="mt-1.5 text-[11px] font-bold text-red-600 flex items-center gap-1">
-                                          <AlertTriangle className="w-3.5 h-3.5" />
-                                          <span>BENTROK TERDETEKSI!</span>
+                                        <div className="mt-2 p-1.5 bg-red-100/90 border border-red-300 rounded-lg text-[10px] text-red-900 space-y-1">
+                                          <div className="font-extrabold text-red-700 flex items-center gap-1">
+                                            <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                                            <span>BENTROK TERDETEKSI!</span>
+                                          </div>
+                                          {conflictReasons.length > 0 ? (
+                                            <ul className="list-disc list-inside space-y-0.5 leading-tight">
+                                              {conflictReasons.map((reason, rIdx) => (
+                                                <li key={rIdx} className="font-medium">
+                                                  {reason}
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          ) : (
+                                            <div className="italic">Jadwal ini bentrok dengan jadwal guru/kelas lain pada jam ini.</div>
+                                          )}
                                         </div>
                                       )}
 
@@ -2140,6 +2354,7 @@ export default function AdminScheduleDashboard() {
                     <th className="py-3 px-4 font-semibold text-center w-32 bg-emerald-50/60">Tingkat XI (JP)</th>
                     <th className="py-3 px-4 font-semibold text-center w-32 bg-purple-50/60">Tingkat XII (JP)</th>
                     <th className="py-3 px-4 font-semibold text-center w-32">Maks JP/Hari</th>
+                    <th className="py-3 px-4 font-semibold text-center min-w-[260px]">Slot Jam Pilihan <span className="font-normal text-slate-400 text-xs">(opsional, berlaku semua tingkat)</span></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -2221,6 +2436,122 @@ export default function AdminScheduleDashboard() {
               </table>
             </div>
           </div>
+
+          {/* Panel Slot Jam Pilihan (Pinning) per Mapel */}
+          {(() => {
+            const refDay = activeDays.find((d: any) => d.isActive) || activeDays[0];
+            const availableSlots = refDay
+              ? (refDay.timeSlots || []).filter((ts: any) => !ts.isBreak).sort((a: any, b: any) => a.periodNumber - b.periodNumber)
+              : [];
+            const umum = subjects.filter((s) => s.category === "UMUM");
+            if (!availableSlots.length || !umum.length) return null;
+            return (
+              <div className="bg-white rounded-2xl border border-indigo-200 shadow-sm overflow-hidden">
+                <div className="p-4 bg-indigo-50 border-b border-indigo-200">
+                  <div className="font-bold text-indigo-900 text-sm flex items-center gap-2">
+                    🕐 Slot Jam Pilihan per Mata Pelajaran
+                    <span className="font-normal text-indigo-500 text-xs">(Opsional — berlaku saat Auto-Generate)</span>
+                  </div>
+                  <p className="text-xs text-indigo-600 mt-0.5">Pilih jam ke berapa mapel ini sebaiknya dijadwalkan. Jika tidak dipilih, sistem bebas mencari slot kosong. Klik <strong>Simpan Slot</strong> per baris setelah memilih.</p>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {umum.map((s) => {
+                    const gradeRows = [
+                      { grade: "X", label: "Kls X", selClass: "bg-blue-600 border-blue-600", hoverClass: "hover:border-blue-400 hover:text-blue-600" },
+                      { grade: "XI", label: "Kls XI", selClass: "bg-emerald-600 border-emerald-600", hoverClass: "hover:border-emerald-400 hover:text-emerald-600" },
+                      { grade: "XII", label: "Kls XII", selClass: "bg-purple-600 border-purple-600", hoverClass: "hover:border-purple-400 hover:text-purple-600" },
+                    ];
+                    const hasAnyPin = gradeRows.some((g) => (slotPinInputs[`${s.id}_${g.grade}`] || []).length > 0);
+                    return (
+                      <div key={s.id} className="p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-mono font-bold text-slate-500 text-xs">{s.code}</span>
+                          <span className="text-sm font-semibold text-slate-900">{s.name}</span>
+                          {hasAnyPin && <span className="px-1.5 py-0.5 text-[10px] font-bold bg-indigo-100 text-indigo-700 rounded">📌 Ada Pin</span>}
+                        </div>
+                        <div className="space-y-1.5">
+                          {gradeRows.map(({ grade, label, hoverClass, selClass }) => {
+                            const pinKey = `${s.id}_${grade}`;
+                            const selectedPins = slotPinInputs[pinKey] || [];
+                            const targetJP = standardInputs[pinKey]?.totalPeriods ?? 0;
+                            const isComplete = targetJP > 0 && selectedPins.length === targetJP;
+
+                            return (
+                              <div key={grade} className="flex flex-wrap items-center gap-2 py-1">
+                                <div className="w-24 shrink-0 flex items-center justify-between">
+                                  <span className="text-xs font-bold text-slate-700">{label}</span>
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                    targetJP > 0 ? "bg-slate-100 text-slate-700" : "bg-slate-50 text-slate-400"
+                                  }`}>
+                                    {targetJP} JP
+                                  </span>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-1">
+                                  {availableSlots.map((ts: any) => {
+                                    const isSelected = selectedPins.includes(ts.periodNumber);
+                                    return (
+                                      <button
+                                        key={ts.id}
+                                        type="button"
+                                        disabled={targetJP <= 0}
+                                        onClick={() => toggleSlotPin(s.id, grade, ts.periodNumber)}
+                                        title={`${ts.label} (${ts.startTime}–${ts.endTime})`}
+                                        className={`w-7 h-7 rounded-lg text-xs font-bold border transition-all ${
+                                          targetJP <= 0
+                                            ? "bg-slate-50 text-slate-300 border-slate-200 cursor-not-allowed"
+                                            : isSelected
+                                            ? `${selClass} text-white shadow-sm ring-1 ring-offset-1 ring-blue-500`
+                                            : `bg-white text-slate-600 border-slate-300 ${hoverClass}`
+                                        }`}
+                                      >
+                                        {ts.periodNumber}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+
+                                {targetJP > 0 ? (
+                                  <span
+                                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                                      isComplete
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : selectedPins.length > 0
+                                        ? "bg-amber-100 text-amber-800"
+                                        : "bg-slate-100 text-slate-500"
+                                    }`}
+                                  >
+                                    {isComplete
+                                      ? `✓ ${selectedPins.length}/${targetJP} JP Pas`
+                                      : selectedPins.length > 0
+                                      ? `${selectedPins.length}/${targetJP} JP (Pilih ${targetJP - selectedPins.length} lagi)`
+                                      : `0/${targetJP} JP (Bebas Slot)`}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] italic text-slate-400">
+                                    Setel JP di atas untuk memilih slot
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveSlotPins(s.id)}
+                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                          >
+                            Simpan Slot {s.code}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

@@ -640,6 +640,9 @@ export async function POST(request: Request) {
             grade: item.grade,
             totalPeriods: Number(item.totalPeriods) || 0,
             maxPerDay: Number(item.maxPerDay) || 2,
+            preferredTimeSlotPeriods: Array.isArray(item.preferredTimeSlotPeriods)
+              ? JSON.stringify(item.preferredTimeSlotPeriods)
+              : (item.preferredTimeSlotPeriods || '[]'),
           }));
 
         await prisma.curriculumStandard.deleteMany({});
@@ -649,6 +652,25 @@ export async function POST(request: Request) {
           });
         }
         return NextResponse.json({ success: true, message: 'Standar kurikulum berhasil disimpan.' });
+      }
+
+      if (action === 'save_slot_pins') {
+        // Simpan preferredTimeSlotPeriods per subjectId+grade
+        // data.pins = [{ subjectId, grade, preferredTimeSlotPeriods: number[] }, ...]
+        const pins = Array.isArray(data.pins) ? data.pins : [];
+        await Promise.all(
+          pins.map((pin: any) =>
+            prisma.curriculumStandard.updateMany({
+              where: { subjectId: pin.subjectId, grade: pin.grade },
+              data: {
+                preferredTimeSlotPeriods: Array.isArray(pin.preferredTimeSlotPeriods)
+                  ? JSON.stringify(pin.preferredTimeSlotPeriods)
+                  : '[]',
+              },
+            })
+          )
+        );
+        return NextResponse.json({ success: true, message: 'Slot jam pilihan berhasil disimpan.' });
       }
 
       if (action === 'clear_all') {
