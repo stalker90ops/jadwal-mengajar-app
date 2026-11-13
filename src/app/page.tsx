@@ -321,6 +321,19 @@ export default function PublicSchedulePage() {
               <Printer className="w-4 h-4" />
               <span>Cetak / PDF</span>
             </button>
+
+            {viewMode === "TEACHER" && selectedTeacherObj && (
+              <a
+                href={`/print/teacher?id=${selectedTeacherObj.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-sm font-semibold transition-colors shadow-sm"
+                title="Buka Format Cetak Resmi UPT SMK Negeri 2 Parepare"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Cetak Format Resmi Guru (A4)</span>
+              </a>
+            )}
           </div>
         </div>
 

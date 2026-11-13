@@ -24,6 +24,7 @@ import {
   Database,
   Briefcase,
   Award,
+  Printer,
 } from "lucide-react";
 import {
   downloadCsvFile,
@@ -3447,13 +3448,23 @@ export default function AdminScheduleDashboard() {
                   Audit Beban Kerja & Kelayakan Sertifikasi TPG (24 JP) sesuai Permendikdasmen No. 11 Tahun 2025
                 </p>
               </div>
-              <div className="flex items-center gap-1.5 text-xs">
+              <div className="flex items-center gap-2 text-xs flex-wrap">
                 <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md font-bold">
                   {teachers.filter((t) => teacherWorkloadAuditMap.get(t.id)?.isValidTPG).length} Valid TPG
                 </span>
                 <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-md font-bold">
                   {teachers.filter((t) => !teacherWorkloadAuditMap.get(t.id)?.isValidTPG).length} Belum Memenuhi
                 </span>
+                <a
+                  href="/print/teacher"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-lg font-bold transition-all shadow-sm"
+                  title="Buka Format Cetak Resmi Jadwal Per Guru (A4)"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Format Resmi</span>
+                </a>
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -3583,7 +3594,17 @@ export default function AdminScheduleDashboard() {
                             </div>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right space-x-2">
+                        <td className="py-3 px-4 text-right space-x-2 whitespace-nowrap">
+                          <a
+                            href={`/print/teacher?id=${t.id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-purple-600 hover:text-purple-800 hover:underline text-xs font-semibold inline-flex items-center gap-1"
+                            title="Cetak Format Resmi Jadwal Guru (A4)"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Cetak</span>
+                          </a>
                           <button
                             onClick={() =>
                               setTeacherForm({
