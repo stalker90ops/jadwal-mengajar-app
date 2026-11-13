@@ -33,6 +33,7 @@ import {
   validateScheduleCandidate,
   ConflictDetail,
 } from "@/lib/schedule-validator";
+import SearchableSelect from "@/components/SearchableSelect";
 
 type TabKey =
   | "schedule"
@@ -586,6 +587,10 @@ export default function AdminScheduleDashboard() {
 
   const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!scheduleForm.classGroupId || !scheduleForm.subjectId || !scheduleForm.teacherId || !scheduleForm.roomId) {
+      showMessage("error", "Harap pilih Kelas, Mata Pelajaran, Guru, dan Ruangan terlebih dahulu.");
+      return;
+    }
     setBusyAction(true);
     try {
       const action = scheduleForm.id ? "update" : "create";
@@ -1223,30 +1228,47 @@ export default function AdminScheduleDashboard() {
                 </button>
               ))}
 
-              <select
-                value={gridFilterId}
-                onChange={(e) => setGridFilterId(e.target.value)}
-                className="ml-1 px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 min-w-[230px]"
-              >
-                {gridFilterMode === "CLASS" &&
-                  classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.code})
-                    </option>
-                  ))}
-                {gridFilterMode === "TEACHER" &&
-                  teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.code})
-                    </option>
-                  ))}
-                {gridFilterMode === "ROOM" &&
-                  rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} ({r.code}) - {r.type}
-                    </option>
-                  ))}
-              </select>
+              <div className="ml-1 min-w-[260px] text-xs">
+                <SearchableSelect
+                  options={
+                    gridFilterMode === "CLASS"
+                      ? classes.map((c) => ({
+                          value: c.id,
+                          label: c.name,
+                          badge: c.grade,
+                          subLabel: c.code,
+                        }))
+                      : gridFilterMode === "TEACHER"
+                      ? teachers.map((t) => ({
+                          value: t.id,
+                          label: t.name,
+                          badge: t.code,
+                        }))
+                      : rooms.map((r) => ({
+                          value: r.id,
+                          label: r.name,
+                          badge: r.type,
+                          subLabel: r.code,
+                        }))
+                  }
+                  value={gridFilterId}
+                  onChange={(val) => setGridFilterId(val)}
+                  placeholder={
+                    gridFilterMode === "CLASS"
+                      ? "-- Pilih Kelas --"
+                      : gridFilterMode === "TEACHER"
+                      ? "-- Pilih Guru --"
+                      : "-- Pilih Ruangan --"
+                  }
+                  searchPlaceholder={
+                    gridFilterMode === "CLASS"
+                      ? "Ketik nama/kode kelas..."
+                      : gridFilterMode === "TEACHER"
+                      ? "Ketik nama/kode guru..."
+                      : "Ketik nama/kode ruangan..."
+                  }
+                />
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -2656,62 +2678,60 @@ export default function AdminScheduleDashboard() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Kelas / Rombel *
                 </label>
-                <select
-                  required
+                <SearchableSelect
+                  options={classes.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    badge: c.grade,
+                    subLabel: c.code,
+                  }))}
                   value={assignmentForm.classGroupId}
-                  onChange={(e) =>
-                    setAssignmentForm({ ...assignmentForm, classGroupId: e.target.value })
+                  onChange={(val) =>
+                    setAssignmentForm({ ...assignmentForm, classGroupId: val })
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                >
-                  <option value="">-- Pilih Kelas --</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.code})
-                    </option>
-                  ))}
-                </select>
+                  placeholder="-- Pilih Kelas --"
+                  searchPlaceholder="Cari nama atau kode kelas..."
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Mata Pelajaran *
                 </label>
-                <select
-                  required
+                <SearchableSelect
+                  options={subjects.map((s) => ({
+                    value: s.id,
+                    label: s.name,
+                    badge: s.code,
+                    subLabel: s.category === "KEJURUAN" ? "Kejuruan" : "Umum",
+                  }))}
                   value={assignmentForm.subjectId}
-                  onChange={(e) =>
-                    setAssignmentForm({ ...assignmentForm, subjectId: e.target.value })
+                  onChange={(val) =>
+                    setAssignmentForm({ ...assignmentForm, subjectId: val })
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                >
-                  <option value="">-- Pilih Mata Pelajaran --</option>
-                  {subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.code})
-                    </option>
-                  ))}
-                </select>
+                  placeholder="-- Pilih Mata Pelajaran --"
+                  searchPlaceholder="Cari nama atau kode mapel..."
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Guru Pengajar (Opsional / TBD)
                 </label>
-                <select
+                <SearchableSelect
+                  options={teachers.map((t) => ({
+                    value: t.id,
+                    label: t.name,
+                    badge: t.code,
+                  }))}
                   value={assignmentForm.teacherId}
-                  onChange={(e) =>
-                    setAssignmentForm({ ...assignmentForm, teacherId: e.target.value })
+                  onChange={(val) =>
+                    setAssignmentForm({ ...assignmentForm, teacherId: val })
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                >
-                  <option value="">-- Belum Ditentukan (TBD) --</option>
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.code})
-                    </option>
-                  ))}
-                </select>
+                  placeholder="-- Belum Ditentukan (TBD) --"
+                  searchPlaceholder="Ketik nama atau kode guru..."
+                  allowClear
+                />
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   Boleh dikosongkan terlebih dahulu, guru dapat dipilih kapan saja nanti.
                 </p>
@@ -2775,20 +2795,21 @@ export default function AdminScheduleDashboard() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Ruangan Khusus (Opsional)
                 </label>
-                <select
+                <SearchableSelect
+                  options={rooms.map((r) => ({
+                    value: r.id,
+                    label: r.name,
+                    badge: r.type,
+                    subLabel: `${r.code} • Kapasitas ${r.capacity}`,
+                  }))}
                   value={assignmentForm.preferredRoomId}
-                  onChange={(e) =>
-                    setAssignmentForm({ ...assignmentForm, preferredRoomId: e.target.value })
+                  onChange={(val) =>
+                    setAssignmentForm({ ...assignmentForm, preferredRoomId: val })
                   }
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg"
-                >
-                  <option value="">-- Ikuti Ruang Default Kelas --</option>
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} ({r.code})
-                    </option>
-                  ))}
-                </select>
+                  placeholder="-- Ikuti Ruang Default Kelas --"
+                  searchPlaceholder="Cari nama atau tipe ruangan..."
+                  allowClear
+                />
               </div>
 
               <button
@@ -3009,8 +3030,8 @@ export default function AdminScheduleDashboard() {
       {/* ==================== MODAL TAMBAH / EDIT JADWAL DENGAN VALIDASI REAL-TIME ==================== */}
       {showScheduleModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden">
-            <div className="p-5 bg-slate-900 text-white flex items-center justify-between">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-visible">
+            <div className="p-5 bg-slate-900 text-white flex items-center justify-between rounded-t-2xl">
               <div>
                 <h3 className="font-bold text-lg">
                   {scheduleForm.id ? "Edit / Pindahkan Slot Jadwal" : "Tambah Jadwal Mengajar"}
@@ -3085,45 +3106,47 @@ export default function AdminScheduleDashboard() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Kelas / Rombel *
                   </label>
-                  <select
-                    required
+                  <SearchableSelect
+                    options={classes.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                      badge: c.grade,
+                      subLabel: c.code,
+                    }))}
                     value={scheduleForm.classGroupId}
-                    onChange={(e) => {
-                      const cls = classes.find((c) => c.id === e.target.value);
+                    onChange={(val) => {
+                      const cls = classes.find((c) => c.id === val);
                       setScheduleForm({
                         ...scheduleForm,
-                        classGroupId: e.target.value,
+                        classGroupId: val,
                         roomId: cls?.defaultRoomId || scheduleForm.roomId,
                       });
                     }}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium"
-                  >
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.code})
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="-- Pilih Kelas --"
+                    searchPlaceholder="Cari kelas / rombel..."
+                    required
+                  />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Ruangan *
                   </label>
-                  <select
-                    required
+                  <SearchableSelect
+                    options={rooms.map((r) => ({
+                      value: r.id,
+                      label: r.name,
+                      badge: r.type,
+                      subLabel: `${r.code} • Kapasitas ${r.capacity}`,
+                    }))}
                     value={scheduleForm.roomId}
-                    onChange={(e) =>
-                      setScheduleForm({ ...scheduleForm, roomId: e.target.value })
+                    onChange={(val) =>
+                      setScheduleForm({ ...scheduleForm, roomId: val })
                     }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium"
-                  >
-                    {rooms.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name} ({r.code}) - {r.type}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="-- Pilih Ruangan --"
+                    searchPlaceholder="Cari ruangan..."
+                    required
+                  />
                 </div>
               </div>
 
@@ -3132,45 +3155,47 @@ export default function AdminScheduleDashboard() {
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Mata Pelajaran *
                   </label>
-                  <select
-                    required
+                  <SearchableSelect
+                    options={subjects.map((s) => ({
+                      value: s.id,
+                      label: s.name,
+                      badge: s.code,
+                      subLabel: s.category === "KEJURUAN" ? "Kejuruan" : "Umum",
+                    }))}
                     value={scheduleForm.subjectId}
-                    onChange={(e) =>
-                      setScheduleForm({ ...scheduleForm, subjectId: e.target.value })
+                    onChange={(val) =>
+                      setScheduleForm({ ...scheduleForm, subjectId: val })
                     }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium"
-                  >
-                    {subjects.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="-- Pilih Mata Pelajaran --"
+                    searchPlaceholder="Cari nama atau kode mapel..."
+                    required
+                  />
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Guru Pengajar *
                   </label>
-                  <select
-                    required
-                    value={scheduleForm.teacherId}
-                    onChange={(e) =>
-                      setScheduleForm({ ...scheduleForm, teacherId: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-medium"
-                  >
-                    {teachers.map((t) => {
+                  <SearchableSelect
+                    options={teachers.map((t) => {
                       const days = parseJsonNumberArray(t.activeDays)
                         .map((d) => DAY_NAMES[d]?.slice(0, 3))
-                        .join(",");
-                      return (
-                        <option key={t.id} value={t.id}>
-                          {t.name} [Aktif: {days}]
-                        </option>
-                      );
+                        .join(", ");
+                      return {
+                        value: t.id,
+                        label: t.name,
+                        badge: t.code,
+                        subLabel: `Aktif: ${days}`,
+                      };
                     })}
-                  </select>
+                    value={scheduleForm.teacherId}
+                    onChange={(val) =>
+                      setScheduleForm({ ...scheduleForm, teacherId: val })
+                    }
+                    placeholder="-- Pilih Guru Pengajar --"
+                    searchPlaceholder="Ketik nama atau kode guru..."
+                    required
+                  />
                 </div>
               </div>
 
