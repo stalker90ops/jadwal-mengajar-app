@@ -18,8 +18,12 @@ interface SearchableSelectProps {
   searchPlaceholder?: string;
   disabled?: boolean;
   className?: string;
+  buttonClassName?: string;
   required?: boolean;
   allowClear?: boolean;
+  clearLabel?: string;
+  openDirection?: "auto" | "down" | "up";
+  size?: "sm" | "md";
 }
 
 export default function SearchableSelect({
@@ -30,13 +34,38 @@ export default function SearchableSelect({
   searchPlaceholder = "Ketik untuk mencari...",
   disabled = false,
   className = "",
+  buttonClassName = "",
   allowClear = false,
+  clearLabel,
   required = false,
+  openDirection = "auto",
+  size = "md",
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Deteksi arah dropdown (atas atau bawah) secara dinamis
+  useEffect(() => {
+    if (isOpen) {
+      if (openDirection === "up") {
+        setDropUp(true);
+      } else if (openDirection === "down") {
+        setDropUp(false);
+      } else if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        const spaceAbove = rect.top;
+        if (spaceBelow < 260 && spaceAbove > spaceBelow) {
+          setDropUp(true);
+        } else {
+          setDropUp(false);
+        }
+      }
+    }
+  }, [isOpen, openDirection]);
 
   // Cari objek opsi yang sedang terpilih
   const selectedOption = useMemo(
@@ -95,7 +124,7 @@ export default function SearchableSelect({
   };
 
   return (
-    <div ref={containerRef} className={`relative ${className}`}>
+    <div ref={containerRef} className={`relative ${isOpen ? "z-40" : ""} ${className}`}>
       {/* Hidden input for HTML form validation */}
       {required && (
         <input
@@ -118,12 +147,14 @@ export default function SearchableSelect({
             setIsOpen(!isOpen);
           }
         }}
-        className={`w-full flex items-center justify-between px-3 py-2 text-sm bg-white border rounded-lg transition-all cursor-pointer select-none ${
+        className={`w-full flex items-center justify-between border rounded-lg transition-all cursor-pointer select-none ${
+          size === "sm" ? "px-2.5 py-1 text-xs" : "px-3 py-2 text-sm"
+        } ${
           disabled
             ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
             : isOpen
-            ? "border-blue-500 ring-2 ring-blue-500/20 shadow-sm"
-            : "border-slate-300 hover:border-slate-400"
+            ? "border-blue-500 ring-2 ring-blue-500/20 shadow-sm bg-white"
+            : buttonClassName || "bg-white border-slate-300 hover:border-slate-400"
         }`}
       >
         <div className="flex items-center gap-2 truncate flex-1 min-w-0 pr-1">
@@ -144,7 +175,9 @@ export default function SearchableSelect({
               )}
             </div>
           ) : (
-            <span className="text-slate-400 truncate">{placeholder}</span>
+            <span className={`truncate ${!buttonClassName ? "text-slate-400" : ""}`}>
+              {placeholder}
+            </span>
           )}
         </div>
 
@@ -160,7 +193,7 @@ export default function SearchableSelect({
             </span>
           )}
           <ChevronDown
-            className={`w-4 h-4 transition-transform duration-200 ${
+            className={`${size === "sm" ? "w-3.5 h-3.5" : "w-4 h-4"} transition-transform duration-200 ${
               isOpen ? "rotate-180 text-blue-600" : ""
             }`}
           />
@@ -169,7 +202,11 @@ export default function SearchableSelect({
 
       {/* Floating Dropdown Menu dengan Search Bar */}
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+        <div
+          className={`absolute left-0 min-w-[260px] w-full ${
+            dropUp ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          } z-50 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100`}
+        >
           {/* Input Pencarian */}
           <div className="p-2 border-b border-slate-100 bg-slate-50/70">
             <div className="relative">
@@ -219,7 +256,7 @@ export default function SearchableSelect({
                     : "text-slate-500 hover:bg-slate-50"
                 }`}
               >
-                <span>{placeholder}</span>
+                <span>{clearLabel || placeholder}</span>
                 {!value && <Check className="w-3.5 h-3.5 text-blue-600" />}
               </div>
             )}

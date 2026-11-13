@@ -516,7 +516,11 @@ export default function AdminScheduleDashboard() {
         setAssignments((prev) =>
           prev.map((a) =>
             a.id === assignmentId
-              ? { ...a, teacherId, teacher: teachers.find((t) => t.id === teacherId) || null }
+              ? {
+                  ...a,
+                  teacherId: teacherId || null,
+                  teacher: teachers.find((t) => t.id === teacherId) || null,
+                }
               : a
           )
         );
@@ -1349,6 +1353,16 @@ export default function AdminScheduleDashboard() {
       .filter((a) => a.classGroupId === assignmentFilterClass)
       .reduce((acc, a) => acc + (a.totalPeriods || 0), 0);
   }, [assignments, assignmentFilterClass]);
+
+  const teacherOptions = useMemo(
+    () =>
+      teachers.map((t) => ({
+        value: t.id,
+        label: t.name,
+        badge: t.code,
+      })),
+    [teachers]
+  );
 
   const filteredAssignments = useMemo(() => {
     if (!assignmentFilterClass) return [];
@@ -3440,13 +3454,13 @@ export default function AdminScheduleDashboard() {
               )}
             </div>
 
-            <div className="overflow-x-auto flex-1">
+            <div className="overflow-x-auto flex-1 min-h-[360px] pb-24">
               <table className="w-full text-left border-collapse text-sm">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs">
                     <th className="py-3 px-4 font-semibold">Kelas</th>
                     <th className="py-3 px-4 font-semibold">Mata Pelajaran</th>
-                    <th className="py-3 px-4 font-semibold">Guru Pengajar (Pilih Langsung)</th>
+                    <th className="py-3 px-4 font-semibold min-w-[240px]">Guru Pengajar (Ketik / Pilih Langsung)</th>
                     <th className="py-3 px-4 font-semibold">Keterangan</th>
                     <th className="py-3 px-4 font-semibold">Terjadwal</th>
                     <th className="py-3 px-4 font-semibold text-right">Aksi</th>
@@ -3485,23 +3499,22 @@ export default function AdminScheduleDashboard() {
                               {a.subject?.code} • {a.subject?.category === "KEJURUAN" ? "Kejuruan" : "Umum"}
                             </div>
                           </td>
-                          <td className="py-2.5 px-4">
-                            <select
+                          <td className="py-2 px-4 min-w-[240px] max-w-[280px]">
+                            <SearchableSelect
                               value={a.teacherId || ""}
-                              onChange={(e) => handleQuickAssignTeacher(a.id, e.target.value)}
-                              className={`text-xs px-2.5 py-1 rounded-lg border font-medium w-full max-w-[200px] transition-colors ${
+                              onChange={(val) => handleQuickAssignTeacher(a.id, val)}
+                              options={teacherOptions}
+                              placeholder="-- Belum Ada Guru (TBD) --"
+                              clearLabel="-- Kosongkan / Belum Ada Guru (TBD) --"
+                              searchPlaceholder="Ketik nama atau kode guru..."
+                              allowClear={true}
+                              size="sm"
+                              buttonClassName={
                                 a.teacherId
-                                  ? "border-slate-300 bg-white text-slate-800"
-                                  : "border-amber-300 bg-amber-50 text-amber-800"
-                              }`}
-                            >
-                              <option value="">-- Belum Ada Guru (TBD) --</option>
-                              {teachers.map((t) => (
-                                <option key={t.id} value={t.id}>
-                                  {t.name} ({t.code})
-                                </option>
-                              ))}
-                            </select>
+                                  ? "bg-white border-slate-300 text-slate-800 hover:border-slate-400 font-medium"
+                                  : "bg-amber-50 border-amber-300 text-amber-850 hover:border-amber-400 font-medium"
+                              }
+                            />
                           </td>
                           <td className="py-2.5 px-4 text-xs text-slate-500 max-w-[150px] truncate" title={a.notes || ""}>
                             {a.notes || "-"}
