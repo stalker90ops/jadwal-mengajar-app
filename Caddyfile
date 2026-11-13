@@ -1,0 +1,4 @@
+jadwal.contohsekolah.sch.id {
+	encode gzip
+	reverse_proxy app:3000
+}

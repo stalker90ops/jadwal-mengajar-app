@@ -8,7 +8,7 @@ export async function GET() {
   try {
     await ensureDefaultActiveDays();
 
-    const [activeDays, teachers, subjects, rooms, classes, assignments, schedules] = await Promise.all([
+    const [activeDays, teachers, subjects, rooms, classes, assignments, schedules, curriculumStandards] = await Promise.all([
       prisma.activeDay.findMany({
         orderBy: { dayNumber: 'asc' },
         include: {
@@ -22,6 +22,9 @@ export async function GET() {
       }),
       prisma.subject.findMany({
         orderBy: { code: 'asc' },
+        include: {
+          curriculumStandards: true,
+        },
       }),
       prisma.room.findMany({
         orderBy: { code: 'asc' },
@@ -54,6 +57,11 @@ export async function GET() {
           { timeSlot: { periodNumber: 'asc' } },
         ],
       }),
+      prisma.curriculumStandard.findMany({
+        include: {
+          subject: true,
+        },
+      }),
     ]);
 
     const audit = auditAllSchedules(schedules as unknown as ScheduleWithRelations[]);
@@ -66,6 +74,7 @@ export async function GET() {
       classes,
       assignments,
       schedules,
+      curriculumStandards,
       audit,
     });
   } catch (error) {
@@ -485,34 +494,50 @@ export async function POST(request: Request) {
     // ==================== BEBAN MENGAJAR (ASSIGNMENT) ====================
     if (entity === 'assignment') {
       if (action === 'create') {
-        const upserted = await prisma.teachingAssignment.upsert({
-          where: {
-            teacherId_subjectId_classGroupId: {
-              teacherId: data.teacherId,
-              subjectId: data.subjectId,
-              classGroupId: data.classGroupId,
-            },
-          },
-          update: {
-            totalPeriods: Number(data.totalPeriods) || 2,
-            maxPerDay: Number(data.maxPerDay) || 2,
-            preferredRoomId: data.preferredRoomId || null,
-          },
-          create: {
-            teacherId: data.teacherId,
+        const item = await prisma.teachingAssignment.create({
+          data: {
+            teacherId: data.teacherId || null,
             subjectId: data.subjectId,
             classGroupId: data.classGroupId,
             totalPeriods: Number(data.totalPeriods) || 2,
             maxPerDay: Number(data.maxPerDay) || 2,
             preferredRoomId: data.preferredRoomId || null,
+            notes: data.notes || null,
           },
         });
-        return NextResponse.json({ success: true, item: upserted });
+        return NextResponse.json({ success: true, item });
+      }
+
+      if (action === 'update') {
+        const updated = await prisma.teachingAssignment.update({
+          where: { id: data.id },
+          data: {
+            teacherId: data.teacherId || null,
+            subjectId: data.subjectId,
+            classGroupId: data.classGroupId,
+            totalPeriods: Number(data.totalPeriods) || 2,
+            maxPerDay: Number(data.maxPerDay) || 2,
+            preferredRoomId: data.preferredRoomId || null,
+            notes: data.notes || null,
+          },
+        });
+        return NextResponse.json({ success: true, item: updated });
       }
 
       if (action === 'delete') {
         await prisma.teachingAssignment.delete({ where: { id: data.id } });
         return NextResponse.json({ success: true });
+      }
+
+      if (action === 'assign_teacher') {
+        // Cepat pasang / ganti guru pada beban mengajar tertentu
+        const updated = await prisma.teachingAssignment.update({
+          where: { id: data.id },
+          data: {
+            teacherId: data.teacherId || null,
+          },
+        });
+        return NextResponse.json({ success: true, item: updated });
       }
 
       if (action === 'import') {
@@ -545,23 +570,117 @@ export async function POST(request: Request) {
           const maxPerDay = Number(r.maks_jp_per_hari || r.max_per_day) || 2;
           const preferredRoomId = rMap.get(rCode) || null;
 
-          await prisma.teachingAssignment.upsert({
+          const existing = await prisma.teachingAssignment.findFirst({
             where: {
-              teacherId_subjectId_classGroupId: {
-                teacherId,
-                subjectId,
-                classGroupId,
-              },
+              teacherId,
+              subjectId,
+              classGroupId,
             },
-            update: { totalPeriods, maxPerDay, preferredRoomId },
-            create: { teacherId, subjectId, classGroupId, totalPeriods, maxPerDay, preferredRoomId },
           });
+
+          if (existing) {
+            await prisma.teachingAssignment.update({
+              where: { id: existing.id },
+              data: { totalPeriods, maxPerDay, preferredRoomId },
+            });
+          } else {
+            await prisma.teachingAssignment.create({
+              data: { teacherId, subjectId, classGroupId, totalPeriods, maxPerDay, preferredRoomId },
+            });
+          }
           imported++;
         }
 
         return NextResponse.json({
           success: true,
           message: `Berhasil mengimpor ${imported} alokasi beban mengajar.`,
+        });
+      }
+    }
+
+    // ==================== STRUKTUR KURIKULUM & GENERATE OTOMATIS MAPEL UMUM ====================
+    if (entity === 'curriculum_standard') {
+      if (action === 'save_batch') {
+        // Simpan matriks standar JP untuk mapel umum
+        const standards = Array.isArray(data.standards) ? data.standards : [];
+        for (const item of standards) {
+          if (!item.subjectId || !item.grade) continue;
+          await prisma.curriculumStandard.upsert({
+            where: {
+              subjectId_grade: {
+                subjectId: item.subjectId,
+                grade: item.grade,
+              },
+            },
+            update: {
+              totalPeriods: Number(item.totalPeriods) || 0,
+              maxPerDay: Number(item.maxPerDay) || 2,
+            },
+            create: {
+              subjectId: item.subjectId,
+              grade: item.grade,
+              totalPeriods: Number(item.totalPeriods) || 0,
+              maxPerDay: Number(item.maxPerDay) || 2,
+            },
+          });
+        }
+        return NextResponse.json({ success: true, message: 'Standar kurikulum berhasil disimpan.' });
+      }
+
+      if (action === 'apply_to_classes') {
+        // Terapkan standar mapel umum ke semua rombel sesuai tingkatannya (X, XI, XII)
+        const [standards, classes, subjects] = await Promise.all([
+          prisma.curriculumStandard.findMany(),
+          prisma.classGroup.findMany(),
+          prisma.subject.findMany({ where: { category: 'UMUM' } }),
+        ]);
+
+        const validStandards = standards.filter((s) => s.totalPeriods > 0);
+        let createdCount = 0;
+        let updatedCount = 0;
+
+        for (const cls of classes) {
+          // Cari standar yang cocok dengan tingkatan kelas ini (X, XI, atau XII)
+          const matchedStandards = validStandards.filter((s) => s.grade === cls.grade);
+
+          for (const std of matchedStandards) {
+            // Cek apakah rombel ini sudah punya beban mengajar untuk mapel ini
+            const existing = await prisma.teachingAssignment.findFirst({
+              where: {
+                classGroupId: cls.id,
+                subjectId: std.subjectId,
+              },
+            });
+
+            if (existing) {
+              await prisma.teachingAssignment.update({
+                where: { id: existing.id },
+                data: {
+                  totalPeriods: std.totalPeriods,
+                  maxPerDay: std.maxPerDay,
+                },
+              });
+              updatedCount++;
+            } else {
+              await prisma.teachingAssignment.create({
+                data: {
+                  classGroupId: cls.id,
+                  subjectId: std.subjectId,
+                  teacherId: null, // Boleh kosong, diisi nanti oleh kurikulum
+                  totalPeriods: std.totalPeriods,
+                  maxPerDay: std.maxPerDay,
+                  preferredRoomId: cls.defaultRoomId || null,
+                  notes: 'Otomatis dari Standar Kurikulum',
+                },
+              });
+              createdCount++;
+            }
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `Berhasil menerapkan beban mengajar mapel umum: ${createdCount} baru dibuat, ${updatedCount} diperbarui di seluruh rombel.`,
         });
       }
     }

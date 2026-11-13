@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+dist
+cctv
+ekinerja
+prisma/*.db
+prisma/*.db-journal
+*.tsbuildinfo
+npm-debug.log*

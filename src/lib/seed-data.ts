@@ -223,28 +223,35 @@ export async function seedSampleSchoolData() {
     const preferredRoomId = a.room ? roomMap.get(a.room) || null : null;
 
     if (teacherId && subjectId && classGroupId) {
-      await prisma.teachingAssignment.upsert({
+      const existing = await prisma.teachingAssignment.findFirst({
         where: {
-          teacherId_subjectId_classGroupId: {
-            teacherId,
-            subjectId,
-            classGroupId,
-          },
-        },
-        update: {
-          totalPeriods: a.totalPeriods,
-          maxPerDay: a.maxPerDay,
-          preferredRoomId,
-        },
-        create: {
           teacherId,
           subjectId,
           classGroupId,
-          totalPeriods: a.totalPeriods,
-          maxPerDay: a.maxPerDay,
-          preferredRoomId,
         },
       });
+
+      if (existing) {
+        await prisma.teachingAssignment.update({
+          where: { id: existing.id },
+          data: {
+            totalPeriods: a.totalPeriods,
+            maxPerDay: a.maxPerDay,
+            preferredRoomId,
+          },
+        });
+      } else {
+        await prisma.teachingAssignment.create({
+          data: {
+            teacherId,
+            subjectId,
+            classGroupId,
+            totalPeriods: a.totalPeriods,
+            maxPerDay: a.maxPerDay,
+            preferredRoomId,
+          },
+        });
+      }
     }
   }
 }

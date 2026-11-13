@@ -51,13 +51,13 @@ export interface SchedulerClassGroup {
 
 export interface SchedulerAssignment {
   id: string;
-  teacherId: string;
+  teacherId?: string | null;
   subjectId: string;
   classGroupId: string;
   preferredRoomId: string | null;
   totalPeriods: number;
   maxPerDay: number;
-  teacher: SchedulerTeacher;
+  teacher?: SchedulerTeacher | null;
   subject: SchedulerSubject;
   classGroup: SchedulerClassGroup;
 }
@@ -130,8 +130,8 @@ export function generateConflictFreeSchedule(params: {
   // 2. Mapel yang butuh Lab / preferredRoom
   // 3. Jumlah totalPeriods terbesar
   const sortedAssignments = [...assignments].sort((a, b) => {
-    const aDays = parseJsonNumberArray(a.teacher.activeDays).length;
-    const bDays = parseJsonNumberArray(b.teacher.activeDays).length;
+    const aDays = a.teacher ? parseJsonNumberArray(a.teacher.activeDays).length : 7;
+    const bDays = b.teacher ? parseJsonNumberArray(b.teacher.activeDays).length : 7;
     if (aDays !== bDays) return aDays - bDays;
 
     const aSpecialRoom = a.preferredRoomId || a.subject.requiresLab ? 1 : 0;
@@ -193,18 +193,20 @@ export function generateConflictFreeSchedule(params: {
     day: SchedulerDay,
     timeSlotId: string
   ): { ok: boolean; roomId: string | null } {
-    const teacherActiveDays = parseJsonNumberArray(assignment.teacher.activeDays);
-    if (!teacherActiveDays.includes(day.dayNumber)) {
-      return { ok: false, roomId: null };
-    }
+    if (assignment.teacher && assignment.teacherId) {
+      const teacherActiveDays = parseJsonNumberArray(assignment.teacher.activeDays);
+      if (!teacherActiveDays.includes(day.dayNumber)) {
+        return { ok: false, roomId: null };
+      }
 
-    const teacherUnavailable = parseJsonStringArray(assignment.teacher.unavailableSlots);
-    if (teacherUnavailable.includes(timeSlotId)) {
-      return { ok: false, roomId: null };
-    }
+      const teacherUnavailable = parseJsonStringArray(assignment.teacher.unavailableSlots);
+      if (teacherUnavailable.includes(timeSlotId)) {
+        return { ok: false, roomId: null };
+      }
 
-    if (busyTeacherSlot.has(`${timeSlotId}_${assignment.teacherId}`)) {
-      return { ok: false, roomId: null };
+      if (busyTeacherSlot.has(`${timeSlotId}_${assignment.teacherId}`)) {
+        return { ok: false, roomId: null };
+      }
     }
 
     if (busyClassSlot.has(`${timeSlotId}_${assignment.classGroupId}`)) {
@@ -220,6 +222,20 @@ export function generateConflictFreeSchedule(params: {
   }
 
   for (const assignment of sortedAssignments) {
+    // Jika belum ada guru yang ditentukan, lewati auto-schedule dan catat di unscheduled
+    if (!assignment.teacherId) {
+      unscheduled.push({
+        assignmentId: assignment.id,
+        teacherName: "(Belum Ditentukan)",
+        subjectName: assignment.subject.name,
+        className: assignment.classGroup.name,
+        requestedPeriods: assignment.totalPeriods,
+        scheduledPeriods: 0,
+        reason: "Guru pengampu belum ditentukan (TBD). Silakan tentukan guru pengampu di Beban Mengajar.",
+      });
+      continue;
+    }
+
     // Hitung berapa JP yang sudah dikunci untuk pasangan guru-mapel-kelas ini
     const alreadyLockedCount = lockedSchedules.filter(
       (l) =>
@@ -239,8 +255,10 @@ export function generateConflictFreeSchedule(params: {
     for (const day of activeDays) {
       if (remaining <= 0) break;
 
-      const teacherActiveDays = parseJsonNumberArray(assignment.teacher.activeDays);
-      if (!teacherActiveDays.includes(day.dayNumber)) continue;
+      if (assignment.teacher) {
+        const teacherActiveDays = parseJsonNumberArray(assignment.teacher.activeDays);
+        if (!teacherActiveDays.includes(day.dayNumber)) continue;
+      }
 
       const daySubKey = `${day.id}_${assignment.classGroupId}_${assignment.subjectId}`;
       const existingToday = classDaySubjectCount.get(daySubKey) || 0;
@@ -326,20 +344,21 @@ export function generateConflictFreeSchedule(params: {
     }
 
     if (remaining > 0) {
-      const teacherActiveDays = parseJsonNumberArray(assignment.teacher.activeDays);
+      const teacherActiveDays = assignment.teacher ? parseJsonNumberArray(assignment.teacher.activeDays) : [1, 2, 3, 4, 5, 6];
+      const teacherName = assignment.teacher ? assignment.teacher.name : '(Belum Ditentukan)';
       unscheduled.push({
         assignmentId: assignment.id,
-        teacherName: assignment.teacher.name,
+        teacherName: teacherName,
         subjectName: assignment.subject.name,
         className: assignment.classGroup.name,
         requestedPeriods: assignment.totalPeriods - alreadyLockedCount,
         scheduledPeriods: scheduledForThis,
         reason:
           teacherActiveDays.length === 0
-            ? `Guru ${assignment.teacher.name} tidak memiliki hari aktif sama sekali.`
+            ? `Guru ${teacherName} tidak memiliki hari aktif sama sekali.`
             : rooms.length === 0
             ? 'Belum ada data Ruangan yang tersedia.'
-            : `Slot di hari aktif Guru ${assignment.teacher.name} atau Kelas ${assignment.classGroup.name} sudah penuh/bentrok.`,
+            : `Slot jam untuk Kelas ${assignment.classGroup.name} / ${teacherName} sudah penuh.`,
       });
     }
   }

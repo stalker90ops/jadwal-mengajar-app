@@ -60,15 +60,29 @@ model Teacher {
 
 // Data Mata Pelajaran
 model Subject {
-  id          String               @id @default(uuid())
-  code        String               @unique // Misal: "MAT-X"
-  name        String
-  category    String               @default("UMUM") // UMUM, KEJURUAN, MUATAN_LOKAL, LAB
-  color       String               @default("#2563eb")
-  requiresLab Boolean              @default(false)
-  assignments TeachingAssignment[]
-  schedules   Schedule[]
-  createdAt   DateTime             @default(now())
+  id                  String               @id @default(uuid())
+  code                String               @unique // Misal: "MAT-X"
+  name                String
+  category            String               @default("UMUM") // UMUM, KEJURUAN, MUATAN_LOKAL, LAB
+  color               String               @default("#2563eb")
+  requiresLab         Boolean              @default(false)
+  curriculumStandards CurriculumStandard[]
+  assignments         TeachingAssignment[]
+  schedules           Schedule[]
+  createdAt           DateTime             @default(now())
+}
+
+// Standar Jam Belajar per Tingkat Kelas (Khusus Mapel Umum)
+model CurriculumStandard {
+  id           String   @id @default(uuid())
+  subjectId    String
+  subject      Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  grade        String   // "X", "XI", "XII"
+  totalPeriods Int      @default(2) // Jam pelajaran per minggu untuk tingkatan ini
+  maxPerDay    Int      @default(2) // Maksimal JP per hari pertemuan
+  createdAt    DateTime @default(now())
+
+  @@unique([subjectId, grade])
 }
 
 // Data Ruangan
@@ -99,8 +113,8 @@ model ClassGroup {
 // Beban / Alokasi Tugas Mengajar (untuk Auto-Generate & Kontrol Kuota JP)
 model TeachingAssignment {
   id              String     @id @default(uuid())
-  teacherId       String
-  teacher         Teacher    @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  teacherId       String?    // Opsional: boleh kosong (TBD / belum ada guru)
+  teacher         Teacher?   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   subjectId       String
   subject         Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   classGroupId    String
@@ -108,8 +122,11 @@ model TeachingAssignment {
   preferredRoomId String?
   totalPeriods    Int        @default(2) // Jumlah JP per minggu
   maxPerDay       Int        @default(2) // Maksimal JP per pertemuan dalam 1 hari
+  notes           String?    // Catatan pengampu, misal: "Guru 1 Teori", "Guru 2 Praktik"
+  createdAt       DateTime   @default(now())
 
-  @@unique([teacherId, subjectId, classGroupId])
+  // Diizinkan multi-guru per mapel per kelas (misal tim teaching kejuruan 1-4 guru)
+  @@index([classGroupId, subjectId])
 }
 
 // Item Jadwal Mengajar

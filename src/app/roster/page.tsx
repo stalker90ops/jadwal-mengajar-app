@@ -36,6 +36,7 @@ import {
 
 type TabKey =
   | "schedule"
+  | "curriculum"
   | "teachers"
   | "subjects"
   | "rooms_classes"
@@ -59,6 +60,7 @@ export default function AdminScheduleDashboard() {
   const [classes, setClasses] = useState<any[]>([]);
   const [assignments, setAssignments] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
+  const [curriculumStandards, setCurriculumStandards] = useState<any[]>([]);
   const [audit, setAudit] = useState<{
     conflicts: ConflictDetail[];
     conflictingScheduleIds: string[];
@@ -174,12 +176,14 @@ export default function AdminScheduleDashboard() {
 
   // Form Beban Mengajar
   const [assignmentForm, setAssignmentForm] = useState<{
+    id?: string;
     teacherId: string;
     subjectId: string;
     classGroupId: string;
     preferredRoomId: string;
     totalPeriods: number;
     maxPerDay: number;
+    notes: string;
   }>({
     teacherId: "",
     subjectId: "",
@@ -187,7 +191,135 @@ export default function AdminScheduleDashboard() {
     preferredRoomId: "",
     totalPeriods: 2,
     maxPerDay: 2,
+    notes: "",
   });
+
+  // State Matriks Standar Kurikulum { [subjectId_grade]: { totalPeriods, maxPerDay } }
+  const [standardInputs, setStandardInputs] = useState<Record<string, { totalPeriods: number; maxPerDay: number }>>({});
+
+  // Filter & Search Beban Mengajar
+  const [assignmentFilterClass, setAssignmentFilterClass] = useState<string>("ALL");
+  const [assignmentFilterTeacherStatus, setAssignmentFilterTeacherStatus] = useState<string>("ALL");
+  const [assignmentSearch, setAssignmentSearch] = useState<string>("");
+
+  useEffect(() => {
+    // Bangun map standar yang sudah ada
+    const initial: Record<string, { totalPeriods: number; maxPerDay: number }> = {};
+    for (const std of curriculumStandards) {
+      initial[`${std.subjectId}_${std.grade}`] = {
+        totalPeriods: std.totalPeriods,
+        maxPerDay: std.maxPerDay,
+      };
+    }
+    setStandardInputs(initial);
+  }, [curriculumStandards]);
+
+  const handleStandardChange = (subjectId: string, grade: string, field: "totalPeriods" | "maxPerDay", val: number) => {
+    const key = `${subjectId}_${grade}`;
+    setStandardInputs((prev) => ({
+      ...prev,
+      [key]: {
+        totalPeriods: field === "totalPeriods" ? val : prev[key]?.totalPeriods || 0,
+        maxPerDay: field === "maxPerDay" ? val : prev[key]?.maxPerDay || 2,
+      },
+    }));
+  };
+
+  const handleSaveCurriculumStandards = async () => {
+    setBusyAction(true);
+    try {
+      const standardsList: any[] = [];
+      const commonSubjects = subjects.filter((s) => s.category === "UMUM");
+      const grades = ["X", "XI", "XII"];
+
+      for (const s of commonSubjects) {
+        for (const g of grades) {
+          const key = `${s.id}_${g}`;
+          const item = standardInputs[key];
+          if (item && item.totalPeriods !== undefined) {
+            standardsList.push({
+              subjectId: s.id,
+              grade: g,
+              totalPeriods: Number(item.totalPeriods),
+              maxPerDay: Number(item.maxPerDay) || 2,
+            });
+          }
+        }
+      }
+
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "curriculum_standard",
+          action: "save_batch",
+          data: { standards: standardsList },
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showMessage("success", data.message || "Standar kurikulum berhasil disimpan!");
+        await loadAllData();
+      } else {
+        showMessage("error", data.error || "Gagal menyimpan standar kurikulum");
+      }
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const handleApplyStandardsToClasses = async () => {
+    if (!confirm("Terapkan standar JP mapel umum ke semua rombel (X, XI, XII)? Beban mengajar akan otomatis dibuat tanpa guru (guru bisa dipilih belakangan).")) return;
+    setBusyAction(true);
+    try {
+      // Pastikan standar terbaru tersimpan dulu
+      await handleSaveCurriculumStandards();
+
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "curriculum_standard",
+          action: "apply_to_classes",
+          data: {},
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showMessage("success", data.message);
+        await loadAllData();
+      } else {
+        showMessage("error", data.error || "Gagal menerapkan standar");
+      }
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const handleQuickAssignTeacher = async (assignmentId: string, teacherId: string) => {
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "assignment",
+          action: "assign_teacher",
+          data: { id: assignmentId, teacherId },
+        }),
+      });
+      if (res.ok) {
+        setAssignments((prev) =>
+          prev.map((a) =>
+            a.id === assignmentId
+              ? { ...a, teacherId, teacher: teachers.find((t) => t.id === teacherId) || null }
+              : a
+          )
+        );
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importTargetEntity, setImportTargetEntity] = useState<string>("");
@@ -209,6 +341,7 @@ export default function AdminScheduleDashboard() {
         setClasses(data.classes || []);
         setAssignments(data.assignments || []);
         setSchedules(data.schedules || []);
+        setCurriculumStandards(data.curriculumStandards || []);
         setAudit(data.audit || { conflicts: [], conflictingScheduleIds: [] });
 
         if (!gridFilterId && data.classes?.length > 0) {
@@ -600,8 +733,8 @@ export default function AdminScheduleDashboard() {
 
   const handleSaveAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assignmentForm.teacherId || !assignmentForm.subjectId || !assignmentForm.classGroupId) {
-      showMessage("error", "Pilih Guru, Mata Pelajaran, dan Kelas terlebih dahulu.");
+    if (!assignmentForm.subjectId || !assignmentForm.classGroupId) {
+      showMessage("error", "Pilih Mata Pelajaran dan Kelas terlebih dahulu.");
       return;
     }
     setBusyAction(true);
@@ -611,12 +744,22 @@ export default function AdminScheduleDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           entity: "assignment",
-          action: "create",
+          action: assignmentForm.id ? "update" : "create",
           data: assignmentForm,
         }),
       });
       const data = await res.json();
       if (res.ok) {
+        setAssignmentForm({
+          id: undefined,
+          teacherId: "",
+          subjectId: "",
+          classGroupId: "",
+          preferredRoomId: "",
+          totalPeriods: 2,
+          maxPerDay: 2,
+          notes: "",
+        });
         showMessage("success", "Alokasi beban mengajar berhasil disimpan.");
         await loadAllData();
       } else {
@@ -729,6 +872,38 @@ export default function AdminScheduleDashboard() {
     () => assignments.reduce((acc, a) => acc + (a.totalPeriods || 0), 0),
     [assignments]
   );
+
+  const filteredAssignments = useMemo(() => {
+    return assignments.filter((a) => {
+      if (assignmentFilterClass !== "ALL" && a.classGroupId !== assignmentFilterClass) {
+        return false;
+      }
+      if (assignmentFilterTeacherStatus === "ASSIGNED" && !a.teacherId) {
+        return false;
+      }
+      if (assignmentFilterTeacherStatus === "UNASSIGNED" && a.teacherId) {
+        return false;
+      }
+      if (assignmentSearch.trim()) {
+        const q = assignmentSearch.toLowerCase();
+        const clsName = a.classGroup?.name?.toLowerCase() || "";
+        const subName = a.subject?.name?.toLowerCase() || "";
+        const subCode = a.subject?.code?.toLowerCase() || "";
+        const teaName = a.teacher?.name?.toLowerCase() || "";
+        const notes = a.notes?.toLowerCase() || "";
+        if (
+          !clsName.includes(q) &&
+          !subName.includes(q) &&
+          !subCode.includes(q) &&
+          !teaName.includes(q) &&
+          !notes.includes(q)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [assignments, assignmentFilterClass, assignmentFilterTeacherStatus, assignmentSearch]);
 
   const errorConflictList = useMemo(
     () => audit.conflicts.filter((c) => c.severity === "ERROR"),
@@ -880,11 +1055,12 @@ export default function AdminScheduleDashboard() {
             icon: Calendar,
             badge: errorConflictList.length > 0 ? errorConflictList.length : undefined,
           },
-          { key: "teachers", label: "2. Data Guru & Hari Aktif", icon: Users },
-          { key: "subjects", label: "3. Mata Pelajaran", icon: BookOpen },
-          { key: "rooms_classes", label: "4. Ruangan & Kelas", icon: DoorOpen },
-          { key: "days", label: "5. Hari Keaktifan & Jam Sekolah", icon: Clock },
-          { key: "assignments", label: "6. Beban Mengajar (JP)", icon: Layers },
+          { key: "curriculum", label: "2. Struktur Kurikulum (Standar JP)", icon: Sparkles },
+          { key: "assignments", label: "3. Beban Mengajar (JP)", icon: Layers },
+          { key: "teachers", label: "4. Data Guru & Hari Aktif", icon: Users },
+          { key: "subjects", label: "5. Mata Pelajaran", icon: BookOpen },
+          { key: "rooms_classes", label: "6. Ruangan & Kelas", icon: DoorOpen },
+          { key: "days", label: "7. Hari Keaktifan & Jam Sekolah", icon: Clock },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.key;
@@ -1288,7 +1464,140 @@ export default function AdminScheduleDashboard() {
         </div>
       )}
 
-      {/* ==================== TAB 2: DATA GURU & HARI KEAKTIFAN ==================== */}
+      {/* ==================== TAB 2: STRUKTUR KURIKULUM (STANDAR JP MAPEL UMUM) ==================== */}
+      {activeTab === "curriculum" && (
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-blue-600" />
+                <span>Matriks Standar Beban Jam Mengajar (Khusus Mapel Umum)</span>
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Tentukan alokasi Jam Pelajaran (JP) per minggu untuk setiap tingkat kelas (X, XI, XII). Cukup atur sekali, lalu sistem akan otomatis membuat beban mengajar ke seluruh <strong>{classes.length} Rombel</strong> tanpa perlu input manual berulang-ulang.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleSaveCurriculumStandards}
+                disabled={busyAction}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
+              >
+                <span>Simpan Matriks Standar</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyStandardsToClasses}
+                disabled={busyAction}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-md shadow-blue-600/20 transition-colors"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>🚀 Terapkan ke Seluruh {classes.length} Rombel</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-600 flex items-center justify-between">
+              <span>Daftar Mata Pelajaran Kategori UMUM ({subjects.filter((s) => s.category === "UMUM").length} Mapel)</span>
+              <span className="text-slate-500 italic">*Mapel Kejuruan (Produktif) diatur di Tab Beban Mengajar karena memiliki pembagian 1 s/d 4 guru.</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-200 text-slate-700">
+                    <th className="py-3 px-4 font-semibold w-16">Kode</th>
+                    <th className="py-3 px-4 font-semibold">Nama Mata Pelajaran</th>
+                    <th className="py-3 px-4 font-semibold text-center w-32 bg-blue-50/60">Tingkat X (JP)</th>
+                    <th className="py-3 px-4 font-semibold text-center w-32 bg-emerald-50/60">Tingkat XI (JP)</th>
+                    <th className="py-3 px-4 font-semibold text-center w-32 bg-purple-50/60">Tingkat XII (JP)</th>
+                    <th className="py-3 px-4 font-semibold text-center w-32">Maks JP/Hari</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {subjects
+                    .filter((s) => s.category === "UMUM")
+                    .map((s) => {
+                      const xKey = `${s.id}_X`;
+                      const xiKey = `${s.id}_XI`;
+                      const xiiKey = `${s.id}_XII`;
+
+                      const xJP = standardInputs[xKey]?.totalPeriods ?? 0;
+                      const xiJP = standardInputs[xiKey]?.totalPeriods ?? 0;
+                      const xiiJP = standardInputs[xiiKey]?.totalPeriods ?? 0;
+                      const maxDay = standardInputs[xKey]?.maxPerDay ?? 2;
+
+                      return (
+                        <tr key={s.id} className="hover:bg-slate-50">
+                          <td className="py-3 px-4 font-mono font-bold text-slate-800">{s.code}</td>
+                          <td className="py-3 px-4">
+                            <div className="font-semibold text-slate-900">{s.name}</div>
+                            {s.requiresLab && (
+                              <span className="inline-block mt-0.5 px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-800 rounded">
+                                Wajib Lab / Khusus
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-4 text-center bg-blue-50/30">
+                            <input
+                              type="number"
+                              min={0}
+                              max={10}
+                              value={xJP}
+                              onChange={(e) => handleStandardChange(s.id, "X", "totalPeriods", Number(e.target.value))}
+                              className="w-20 px-2 py-1.5 text-center font-bold text-blue-700 bg-white border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                              placeholder="0 JP"
+                            />
+                          </td>
+                          <td className="py-2 px-4 text-center bg-emerald-50/30">
+                            <input
+                              type="number"
+                              min={0}
+                              max={10}
+                              value={xiJP}
+                              onChange={(e) => handleStandardChange(s.id, "XI", "totalPeriods", Number(e.target.value))}
+                              className="w-20 px-2 py-1.5 text-center font-bold text-emerald-700 bg-white border border-emerald-200 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                              placeholder="0 JP"
+                            />
+                          </td>
+                          <td className="py-2 px-4 text-center bg-purple-50/30">
+                            <input
+                              type="number"
+                              min={0}
+                              max={10}
+                              value={xiiJP}
+                              onChange={(e) => handleStandardChange(s.id, "XII", "totalPeriods", Number(e.target.value))}
+                              className="w-20 px-2 py-1.5 text-center font-bold text-purple-700 bg-white border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500"
+                              placeholder="0 JP"
+                            />
+                          </td>
+                          <td className="py-2 px-4 text-center">
+                            <input
+                              type="number"
+                              min={1}
+                              max={6}
+                              value={maxDay}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                handleStandardChange(s.id, "X", "maxPerDay", val);
+                                handleStandardChange(s.id, "XI", "maxPerDay", val);
+                                handleStandardChange(s.id, "XII", "maxPerDay", val);
+                              }}
+                              className="w-16 px-2 py-1.5 text-center text-slate-700 bg-white border border-slate-300 rounded-lg"
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== TAB 4: DATA GURU & HARI KEAKTIFAN ==================== */}
       {activeTab === "teachers" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Form Input / Edit Guru */}
@@ -2330,23 +2639,40 @@ export default function AdminScheduleDashboard() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Guru Pengajar *
+                  Guru Pengajar (Opsional / TBD)
                 </label>
                 <select
-                  required
                   value={assignmentForm.teacherId}
                   onChange={(e) =>
                     setAssignmentForm({ ...assignmentForm, teacherId: e.target.value })
                   }
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 >
-                  <option value="">-- Pilih Guru --</option>
+                  <option value="">-- Belum Ditentukan (TBD) --</option>
                   {teachers.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} ({t.code})
                     </option>
                   ))}
                 </select>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Boleh dikosongkan terlebih dahulu, guru dapat dipilih kapan saja nanti.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Keterangan / Tim Teaching (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Guru 1 (Teori), Guru 2 (Praktik)"
+                  value={assignmentForm.notes}
+                  onChange={(e) =>
+                    setAssignmentForm({ ...assignmentForm, notes: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -2451,70 +2777,171 @@ export default function AdminScheduleDashboard() {
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="font-bold text-slate-900">
-                Daftar Alokasi Tugas Mengajar ({assignments.length} Item — Total {totalTargetJP} JP)
-              </h3>
+          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-slate-900">
+                  Daftar Alokasi Tugas Mengajar ({assignments.length} Item — Total {totalTargetJP} JP)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Guru dapat dipilih langsung melalui menu dropdown di setiap baris tabel.
+                </p>
+              </div>
               <button
                 onClick={handleAutoGenerate}
                 disabled={busyAction}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Susun Otomatis Sekarang</span>
               </button>
             </div>
-            <div className="overflow-x-auto">
+
+            {/* Filter & Pencarian Cepat */}
+            <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-wrap gap-2.5 items-center text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-slate-600">Filter Kelas:</span>
+                <select
+                  value={assignmentFilterClass}
+                  onChange={(e) => setAssignmentFilterClass(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                >
+                  <option value="ALL">Semua Kelas ({classes.length})</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-slate-600">Status Guru:</span>
+                <select
+                  value={assignmentFilterTeacherStatus}
+                  onChange={(e) => setAssignmentFilterTeacherStatus(e.target.value)}
+                  className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                >
+                  <option value="ALL">Semua Status</option>
+                  <option value="ASSIGNED">Sudah Ada Guru</option>
+                  <option value="UNASSIGNED">Belum Ada Guru (TBD)</option>
+                </select>
+              </div>
+
+              <div className="flex-1 min-w-[180px]">
+                <input
+                  type="text"
+                  placeholder="Cari mapel, guru, rombel..."
+                  value={assignmentSearch}
+                  onChange={(e) => setAssignmentSearch(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
+                />
+              </div>
+
+              {(assignmentFilterClass !== "ALL" ||
+                assignmentFilterTeacherStatus !== "ALL" ||
+                assignmentSearch) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignmentFilterClass("ALL");
+                    setAssignmentFilterTeacherStatus("ALL");
+                    setAssignmentSearch("");
+                  }}
+                  className="text-xs text-blue-600 hover:underline font-semibold"
+                >
+                  Reset Filter
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto flex-1">
               <table className="w-full text-left border-collapse text-sm">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs">
                     <th className="py-3 px-4 font-semibold">Kelas</th>
                     <th className="py-3 px-4 font-semibold">Mata Pelajaran</th>
-                    <th className="py-3 px-4 font-semibold">Guru Pengajar</th>
-                    <th className="py-3 px-4 font-semibold">Status Terjadwal</th>
+                    <th className="py-3 px-4 font-semibold">Guru Pengajar (Pilih Langsung)</th>
+                    <th className="py-3 px-4 font-semibold">Keterangan</th>
+                    <th className="py-3 px-4 font-semibold">Terjadwal</th>
                     <th className="py-3 px-4 font-semibold text-right">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {assignments.map((a) => {
-                    const scheduledCount = schedules.filter(
-                      (s) =>
-                        s.teacherId === a.teacherId &&
-                        s.subjectId === a.subjectId &&
-                        s.classGroupId === a.classGroupId
-                    ).length;
-                    const complete = scheduledCount >= a.totalPeriods;
+                  {filteredAssignments.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center py-8 text-slate-400 text-xs">
+                        Tidak ada alokasi beban mengajar yang cocok dengan filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredAssignments.map((a) => {
+                      const scheduledCount = schedules.filter(
+                        (s) =>
+                          s.teacherId === a.teacherId &&
+                          s.subjectId === a.subjectId &&
+                          s.classGroupId === a.classGroupId
+                      ).length;
+                      const complete = scheduledCount >= a.totalPeriods;
 
-                    return (
-                      <tr key={a.id} className="hover:bg-slate-50">
-                        <td className="py-3 px-4 font-bold text-blue-700">
-                          {a.classGroup?.name}
-                        </td>
-                        <td className="py-3 px-4 font-semibold">{a.subject?.name}</td>
-                        <td className="py-3 px-4 text-slate-700">{a.teacher?.name}</td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                              complete
-                                ? "bg-emerald-100 text-emerald-800"
-                                : "bg-amber-100 text-amber-800"
-                            }`}
-                          >
-                            {scheduledCount} / {a.totalPeriods} JP
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => handleDeleteEntity("assignment", a.id)}
-                            className="text-red-600 hover:underline text-xs font-semibold"
-                          >
-                            Hapus
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                      return (
+                        <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-2.5 px-4 font-bold text-blue-700 whitespace-nowrap">
+                            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200 text-xs mr-1.5">
+                              {a.classGroup?.grade}
+                            </span>
+                            {a.classGroup?.name}
+                          </td>
+                          <td className="py-2.5 px-4 font-medium text-slate-900">
+                            <div>{a.subject?.name}</div>
+                            <div className="text-[11px] text-slate-400 font-normal">
+                              {a.subject?.code} • {a.subject?.category === "KEJURUAN" ? "Kejuruan" : "Umum"}
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-4">
+                            <select
+                              value={a.teacherId || ""}
+                              onChange={(e) => handleQuickAssignTeacher(a.id, e.target.value)}
+                              className={`text-xs px-2.5 py-1 rounded-lg border font-medium w-full max-w-[200px] transition-colors ${
+                                a.teacherId
+                                  ? "border-slate-300 bg-white text-slate-800"
+                                  : "border-amber-300 bg-amber-50 text-amber-800"
+                              }`}
+                            >
+                              <option value="">-- Belum Ada Guru (TBD) --</option>
+                              {teachers.map((t) => (
+                                <option key={t.id} value={t.id}>
+                                  {t.name} ({t.code})
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2.5 px-4 text-xs text-slate-500 max-w-[150px] truncate" title={a.notes || ""}>
+                            {a.notes || "-"}
+                          </td>
+                          <td className="py-2.5 px-4 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                complete
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-amber-100 text-amber-800"
+                              }`}
+                            >
+                              {scheduledCount} / {a.totalPeriods} JP
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => handleDeleteEntity("assignment", a.id)}
+                              className="text-red-600 hover:text-red-800 text-xs font-semibold hover:underline"
+                            >
+                              Hapus
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>

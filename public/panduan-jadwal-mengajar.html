@@ -2,11 +2,11 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<title>Panduan Penggunaan & Fitur - Aplikasi Jadwal Mengajar</title>
+<title>Buku Panduan & Daftar Fitur - SI-JADWAL</title>
 <style>
   @page {
     size: A4;
-    margin: 18mm 16mm 18mm 16mm;
+    margin: 15mm 16mm 15mm 16mm;
     @bottom-right {
       content: counter(page);
     }
@@ -14,27 +14,30 @@
   body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #1e293b;
-    line-height: 1.6;
+    line-height: 1.55;
     margin: 0;
     padding: 0;
-    font-size: 13px;
+    font-size: 12.5px;
   }
   .header {
     text-align: center;
     border-bottom: 3px double #2563eb;
     padding-bottom: 12px;
-    margin-bottom: 24px;
+    margin-bottom: 18px;
   }
   .header h1 {
     margin: 0;
     color: #1e40af;
-    font-size: 22px;
+    font-size: 21px;
     letter-spacing: -0.5px;
   }
   .header p {
     margin: 4px 0 0 0;
     color: #64748b;
-    font-size: 12px;
+    font-size: 11.5px;
+  }
+  .badge-container {
+    margin-top: 6px;
   }
   .badge {
     display: inline-block;
@@ -43,42 +46,46 @@
     padding: 3px 10px;
     border-radius: 999px;
     font-weight: 600;
-    font-size: 11px;
-    margin-top: 6px;
+    font-size: 10.5px;
+    margin: 0 3px;
+  }
+  .badge-green {
+    background: #dcfce7;
+    color: #166534;
   }
   h2 {
     color: #1e3a8a;
-    font-size: 15px;
+    font-size: 14.5px;
     border-left: 4px solid #2563eb;
-    padding-left: 10px;
-    margin-top: 24px;
-    margin-bottom: 10px;
+    padding-left: 9px;
+    margin-top: 18px;
+    margin-bottom: 8px;
   }
   h3 {
     color: #0f172a;
-    font-size: 13px;
-    margin-top: 14px;
-    margin-bottom: 6px;
+    font-size: 12.5px;
+    margin-top: 12px;
+    margin-bottom: 5px;
   }
   p {
-    margin: 6px 0;
+    margin: 5px 0;
   }
   ul, ol {
-    margin: 6px 0 10px 20px;
+    margin: 5px 0 8px 18px;
     padding: 0;
   }
   li {
-    margin-bottom: 4px;
+    margin-bottom: 3px;
   }
   table {
     width: 100%;
     border-collapse: collapse;
-    margin: 12px 0;
-    font-size: 12px;
+    margin: 10px 0;
+    font-size: 11.5px;
   }
   th, td {
     border: 1px solid #cbd5e1;
-    padding: 7px 10px;
+    padding: 6px 8px;
     text-align: left;
   }
   th {
@@ -90,20 +97,24 @@
     background-color: #f8fafc;
   }
   .box {
-    background-color: #f8fafc;
-    border: 1px solid #e2e8f0;
     border-radius: 8px;
-    padding: 12px;
-    margin: 12px 0;
+    padding: 10px 12px;
+    margin: 10px 0;
+    font-size: 12px;
   }
   .box-info {
     background-color: #eff6ff;
-    border-color: #bfdbfe;
+    border: 1px solid #bfdbfe;
     color: #1e40af;
+  }
+  .box-success {
+    background-color: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #166534;
   }
   .box-warning {
     background-color: #fffbeb;
-    border-color: #fde68a;
+    border: 1px solid #fde68a;
     color: #92400e;
   }
   .page-break {
@@ -111,110 +122,126 @@
   }
   .tag {
     font-family: 'Consolas', monospace;
-    background: #f1f5f9;
-    padding: 2px 5px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    padding: 1px 5px;
     border-radius: 4px;
     font-size: 11px;
+    font-weight: 600;
     color: #0f172a;
+  }
+  .url-link {
+    font-family: 'Consolas', monospace;
+    font-weight: 700;
+    color: #2563eb;
   }
   .footer {
     text-align: center;
     font-size: 10px;
     color: #94a3b8;
-    margin-top: 30px;
+    margin-top: 25px;
     border-top: 1px solid #e2e8f0;
-    padding-top: 8px;
+    padding-top: 6px;
   }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <h1>PANDUAN PENGGUNAAN & DAFTAR FITUR LENGKAP</h1>
-  <p>Aplikasi Otomatisasi Penjadwalan Mengajar, Manajemen Roster Kurikulum & Deteksi Bentrok Jadwal</p>
-  <span class="badge">Edisi Standalone Windows & Cloud Hosting • Versi 1.0</span>
+  <h1>BUKU PANDUAN PENGGUNAAN & DAFTAR FITUR</h1>
+  <p><strong>SI-JADWAL:</strong> Aplikasi Penjadwalan Mengajar Otomatis, Roster Kurikulum & Deteksi Bentrok Jadwal</p>
+  <div class="badge-container">
+    <span class="badge badge-green">● Status: Production Live</span>
+    <span class="badge">Edisi Cloud Web & Desktop Offline</span>
+    <span class="badge">Versi Resmi 2026</span>
+  </div>
+</div>
+
+<div class="box box-success">
+  <strong>Alamat Akses Resmi Aplikasi:</strong><br>
+  🌐 <strong>Portal Jadwal Publik (Guru & Siswa):</strong> <span class="url-link">https://jadwal-mengajar-app-q7vw.vercel.app/</span><br>
+  🔐 <strong>Panel Khusus Kurikulum / Admin:</strong> <span class="url-link">https://jadwal-mengajar-app-q7vw.vercel.app/roster/login</span><br>
+  👤 <strong>Akun Admin Kurikulum:</strong> Email: <span class="tag">admin@sekolah.sch.id</span> | Password: <span class="tag">AdminSekolah2026!</span>
 </div>
 
 <h2>1. Sekilas Tentang Aplikasi</h2>
 <p>
-  Aplikasi ini dirancang khusus untuk membantu <strong>Wakil Kepala Sekolah Bidang Kurikulum</strong>, operator, dan guru dalam merancang, memvalidasi, serta mendistribusikan jadwal pelajaran sekolah tanpa khawatir terjadi <strong>tabrakan jadwal</strong> (guru bentrok di dua kelas berbeda, ruangan lab bentrok di jam yang sama, atau rombel diajar dua mapel sekaligus).
+  <strong>SI-JADWAL</strong> adalah platform pintar yang dirancang khusus untuk membantu <strong>Wakil Kepala Sekolah Bidang Kurikulum</strong>, staf operator, guru, dan peserta didik dalam mengatur pembagian jadwal pelajaran sekolah secara terstruktur. Didukung oleh algoritma auto-scheduler cerdas, sistem ini mampu menyusun ratusan jam pelajaran hanya dalam hitungan detik tanpa ada jadwal yang bertabrakan.
 </p>
 
-<h2>2. Ringkasan Fitur Unggulan</h2>
+<h2>2. Daftar Fitur Unggulan Sistem</h2>
 <table>
   <thead>
     <tr>
       <th style="width: 25%;">Fitur</th>
-      <th style="width: 35%;">Deskripsi</th>
+      <th style="width: 35%;">Deskripsi Teknis</th>
       <th style="width: 40%;">Manfaat bagi Sekolah</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <td><strong>Algoritma Auto-Generate</strong></td>
-      <td>Menyusun seluruh jadwal secara otomatis berbasis prioritas ketersediaan guru, lab, dan batasan jam mengajar per hari.</td>
-      <td>Menghemat waktu dari berhari-hari menjadi hitungan detik tanpa pusing menyusun manual.</td>
+      <td>Menyusun seluruh distribusi jam pelajaran secara otomatis berbasis beban mengajar, kapasitas ruangan lab, dan batas maksimal JP harian.</td>
+      <td>Menghemat waktu dari berhari-hari menjadi hitungan detik. Mengurangi stres tim kurikulum di awal tahun ajaran.</td>
     </tr>
     <tr>
-      <td><strong>Deteksi Bentrok Real-Time</strong></td>
-      <td>Audit otomatis 5 dimensi: Guru, Ruangan, Kelas/Rombel, Jam Istirahat, dan Hari Keaktifan Guru.</td>
-      <td>Mencegah guru terjadwal di hari libur pribadinya atau bentrok ruangan praktikum.</td>
+      <td><strong>Deteksi Bentrok 5 Dimensi</strong></td>
+      <td>Memvalidasi secara real-time: (1) Guru tidak mengajar di 2 kelas, (2) Ruang praktikum tidak dipakai bersamaan, (3) Rombel tidak diajar ganda, (4) Slot istirahat terlindungi, (5) Hari keaktifan guru.</td>
+      <td>Jaminan 100% bebas bentrok. Guru tidak akan pernah dijadwalkan pada hari libur pribadinya.</td>
     </tr>
     <tr>
-      <td><strong>Kunci Jadwal (Pin/Lock Slot)</strong></td>
-      <td>Slot tertentu bisa dikunci manual (misalnya Upacara, Jam Wali Kelas, atau Guru Tertentu).</td>
-      <td>Saat jadwal di-generate ulang, slot yang dikunci tidak akan tergeser.</td>
+      <td><strong>Kunci Jadwal (Pin Slot)</strong></td>
+      <td>Slot jam tertentu bisa dikunci permanen (misal: Upacara Bendera, Jam Wali Kelas, atau Guru dengan jadwal mengajar tetap).</td>
+      <td>Saat jadwal di-generate ulang, slot yang dikunci tidak akan tergeser atau ditimpa oleh sistem.</td>
     </tr>
     <tr>
-      <td><strong>Tampilan Matriks Interaktif</strong></td>
-      <td>Grid jadwal visual dengan filter dinamis: Per Kelas, Per Guru, dan Per Ruangan.</td>
-      <td>Mempermudah cetak jadwal per guru maupun jadwal dinding per kelas.</td>
+      <td><strong>Matriks Jadwal 3-Mode</strong></td>
+      <td>Tampilan grid interaktif yang dapat difilter berdasarkan: <strong>Per Kelas</strong>, <strong>Per Guru</strong>, dan <strong>Per Ruangan</strong>.</td>
+      <td>Mempermudah pencetakan jadwal dinding kelas maupun jadwal saku mengajar bagi masing-masing guru.</td>
     </tr>
     <tr>
-      <td><strong>Import/Export CSV & Excel</strong></td>
-      <td>Mendukung import massal data guru, mata pelajaran, ruangan, dan kelas via file spreadsheet.</td>
-      <td>Tidak perlu input manual satu per satu jika sudah memiliki data Dapodik / Excel.</td>
+      <td><strong>Impor & Ekspor CSV/Excel</strong></td>
+      <td>Mendukung impor massal data Guru, Mata Pelajaran, Ruangan, dan Rombel sekaligus.</td>
+      <td>Tidak perlu mengetik satu per satu. Cukup salin dari data Dapodik / Excel dan impor ke aplikasi.</td>
+    </tr>
+    <tr>
+      <td><strong>Database Cloud Permanen</strong></td>
+      <td>Terintegrasi langsung dengan database PostgreSQL di Neon Cloud yang aman, cepat, dan selalu aktif.</td>
+      <td>Data jadwal tidak akan hilang saat laptop mati atau saat aplikasi di-update.</td>
     </tr>
     <tr>
       <td><strong>Portal Publik Guru & Siswa</strong></td>
-      <td>Halaman depan (landing page) bisa diakses guru dan siswa tanpa perlu login admin.</td>
-      <td>Siswa dan guru cukup memilih nama kelas/guru untuk melihat jadwal belajar harian.</td>
+      <td>Halaman depan terbuka yang memungkinkan guru dan siswa mengecek jadwal belajar tanpa perlu login.</td>
+      <td>Siswa dan guru cukup memilih kelas/nama mereka langsung dari HP masing-masing kapan saja.</td>
     </tr>
   </tbody>
 </table>
 
 <div class="page-break"></div>
 
-<h2>3. Langkah-Langkah Penggunaan (Alur Kerja Kurikulum)</h2>
-
-<div class="box box-info">
-  <strong>Login Admin Kurikulum:</strong><br>
-  Buka aplikasi &rarr; Klik menu <strong>"Masuk Panel Kurikulum"</strong> di pojok kanan atas (atau akses menu Roster).<br>
-  - Email Default: <span class="tag">admin@sekolah.com</span><br>
-  - Password Default: <span class="tag">password123</span>
-</div>
+<h2>3. Panduan Alur Kerja Penggunaan (5 Langkah Lengkap)</h2>
 
 <h3>Langkah 1: Pengaturan Hari Aktif & Slot Jam Belajar</h3>
 <ol>
-  <li>Masuk ke Tab <strong>"Hari & Slot Jam"</strong>.</li>
-  <li>Aktifkan hari sekolah yang berlaku (misalnya: Senin s/d Jumat untuk 5 hari kerja, atau Senin s/d Sabtu untuk 6 hari kerja).</li>
+  <li>Masuk ke Panel Kurikulum melalui menu <strong>"Roster"</strong> &rarr; Tab <strong>"Hari & Slot Jam"</strong>.</li>
+  <li>Aktifkan hari sekolah yang berlaku (Senin s/d Jumat untuk 5 hari kerja, atau Senin s/d Sabtu untuk 6 hari kerja).</li>
   <li>Sesuaikan pembagian jam pelajaran (Jam Ke-1 s/d Jam Ke-10), durasi menit, serta tandai slot jam yang merupakan <strong>Jam Istirahat</strong>.</li>
 </ol>
 
-<h3>Langkah 2: Input / Import Data Master</h3>
-<p>Isi data penunjang melalui form input atau import CSV template:</p>
+<h3>Langkah 2: Input / Impor Data Master Sekolah</h3>
+<p>Lengkapi data pendukung melalui formulir input atau fitur impor file template CSV:</p>
 <ul>
   <li><strong>Data Ruangan:</strong> Daftarkan ruang teori (R-101, R-102) dan ruang khusus/lab (Lab Komputer, Lab IPA, Lapangan).</li>
-  <li><strong>Data Kelas / Rombel:</strong> Daftarkan kelas (misal: X Merdeka 1, XI TKJ 1) dan tentukan ruangan default kelas tersebut.</li>
-  <li><strong>Data Mata Pelajaran:</strong> Daftarkan mapel, tentukan kode warna visual, dan centang opsi <em>"Wajib Ruang Lab/Praktik"</em> jika butuh lab khusus.</li>
-  <li><strong>Data Guru & Hari Keaktifan:</strong> Daftarkan nama guru, NIP/Kode, beban JP maksimal, dan <strong>pilih hari apa saja guru tersebut bisa hadir/mengajar</strong>. Guru tidak akan pernah dijadwalkan pada hari tidak aktifnya.</li>
+  <li><strong>Data Kelas / Rombel:</strong> Daftarkan rombel belajar (misal: X Merdeka 1, XI TKJ 1) dan tentukan ruangan default rombel tersebut.</li>
+  <li><strong>Data Mata Pelajaran:</strong> Daftarkan mapel, tentukan kode warna visual, dan centang opsi <em>"Wajib Ruang Lab/Praktik"</em> jika butuh ruangan khusus.</li>
+  <li><strong>Data Guru & Hari Keaktifan:</strong> Daftarkan nama guru, NIP/Kode, kuota JP maksimal, dan <strong>pilih hari apa saja guru tersebut bisa hadir/mengajar</strong>. Guru tidak akan pernah dijadwalkan pada hari yang tidak dicentang.</li>
 </ul>
 
 <h3>Langkah 3: Alokasi Beban Mengajar (Pembagian Tugas Guru)</h3>
 <ol>
   <li>Masuk ke Tab <strong>"Beban Mengajar"</strong>.</li>
-  <li>Tentukan: <em>Guru X</em> mengajar <em>Mapel Matematika</em> di <em>Kelas X-1</em> sebanyak <em>4 Jam Pelajaran (JP)</em>.</li>
-  <li>Tentukan batas <em>Maks JP per Hari</em> (misalnya maksimal 2 JP per pertemuan agar tidak melelahkan siswa).</li>
+  <li>Tentukan pembagian tugas: <em>Guru X</em> mengajar <em>Mapel Matematika</em> di <em>Kelas X-1</em> sebanyak <em>4 Jam Pelajaran (JP)</em> per minggu.</li>
+  <li>Tentukan batas <em>Maks JP per Hari</em> (misalnya maksimal 2 JP per pertemuan agar pembelajaran lebih efektif dan tidak melelahkan siswa).</li>
 </ol>
 
 <h3>Langkah 4: Penyusunan Jadwal (Otomatis & Manual)</h3>
@@ -229,20 +256,29 @@
   <strong>Fitur Validasi Cerdas:</strong> Jika Anda mencoba memasukkan guru yang pada jam tersebut sudah mengajar di kelas lain atau sedang di hari liburnya, sistem akan langsung menampilkan peringatan bentrok berwarna merah dan mencegah penyimpanan ganda.
 </div>
 
-<h3>Langkah 5: Cetak & Publikasi</h3>
+<h3>Langkah 5: Cetak & Publikasi Jadwal</h3>
 <ul>
-  <li>Gunakan filter <strong>"Tinjau Berdasarkan"</strong>:
+  <li>Gunakan menu filter <strong>"Tinjau Berdasarkan"</strong>:
     <ul>
-      <li>Pilih <strong>Kelas</strong> untuk mencetak jadwal dinding kelas.</li>
+      <li>Pilih <strong>Kelas</strong> untuk mencetak jadwal dinding masing-masing kelas.</li>
       <li>Pilih <strong>Guru</strong> untuk mencetak jadwal mengajar pribadi masing-masing guru.</li>
       <li>Pilih <strong>Ruangan</strong> untuk melihat okupansi penggunaan ruang lab/lapangan.</li>
     </ul>
   </li>
-  <li>Klik tombol <strong>"Cetak / Simpan PDF"</strong> di bagian atas matriks untuk langsung mencetak dokumen jadwal resmi.</li>
+  <li>Klik tombol <strong>"Cetak / Simpan PDF"</strong> di bagian atas matriks untuk langsung mencetak dokumen jadwal resmi sekolah.</li>
+</ul>
+
+<h2>4. Opsi Penggunaan Tambahan (Aplikasi Desktop Offline)</h2>
+<p>
+  Selain dapat diakses secara online via internet, sekolah Anda juga memiliki file installer desktop Windows (.exe) mandiri:
+</p>
+<ul>
+  <li><strong>Lokasi File Installer:</strong> <span class="tag">C:\Users\Dapodik\Documents\project ai\dist\Jadwal Mengajar Setup 1.0.0.exe</span></li>
+  <li>Dapat diinstal di laptop/komputer guru mana saja dengan sekali klik, 100% offline tanpa membutuhkan koneksi internet.</li>
 </ul>
 
 <div class="footer">
-  Dokumen Panduan Resmi Aplikasi Penjadwalan Mengajar &copy; 2026 • Dicetak secara otomatis dari sistem
+  Dokumen Panduan Resmi Sistem Informasi Jadwal Mengajar (SI-JADWAL) &copy; 2026 • Dokumen diterbitkan secara otomatis
 </div>
 
 </body>
