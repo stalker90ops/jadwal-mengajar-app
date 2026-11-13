@@ -871,10 +871,13 @@ export async function POST(request: Request) {
     // ==================== TUGAS TAMBAHAN GURU ====================
     if (entity === 'additional_duty') {
       if (action === 'create') {
+        const category = data.category === 'TTU' ? 'TTU' : 'TTLE';
+        const eqHours = category === 'TTU' ? 12 : Number(data.equivalentHours) || 2;
         const created = await prisma.additionalDuty.create({
           data: {
+            category,
             name: String(data.name || '').trim(),
-            equivalentHours: Number(data.equivalentHours) || 2,
+            equivalentHours: eqHours,
             teacherId: data.teacherId ? String(data.teacherId).trim() : null,
             nomorSk: data.nomorSk ? String(data.nomorSk).trim() : null,
             notes: data.notes ? String(data.notes).trim() : null,
@@ -887,11 +890,14 @@ export async function POST(request: Request) {
       }
 
       if (action === 'update') {
+        const category = data.category === 'TTU' ? 'TTU' : 'TTLE';
+        const eqHours = category === 'TTU' ? 12 : Number(data.equivalentHours) || 2;
         const updated = await prisma.additionalDuty.update({
           where: { id: String(data.id) },
           data: {
+            category,
             name: String(data.name || '').trim(),
-            equivalentHours: Number(data.equivalentHours) || 2,
+            equivalentHours: eqHours,
             teacherId: data.teacherId ? String(data.teacherId).trim() : null,
             nomorSk: data.nomorSk ? String(data.nomorSk).trim() : null,
             notes: data.notes ? String(data.notes).trim() : null,
@@ -936,7 +942,23 @@ export async function POST(request: Request) {
           const name = String(r.nama_tugas || r.nama || r.tugas || r.name || r.jabatan || '').trim();
           if (!name) continue;
 
-          const eqHours = Number(r.ekuivalensi_jp || r.ekuivalensi || r.jp || r.jam || r.equivalent_hours) || 2;
+          let rawCat = String(r.kategori || r.category || '').trim().toUpperCase();
+          const rawEqHours = Number(r.ekuivalensi_jp || r.ekuivalensi || r.jp || r.jam || r.equivalent_hours) || 0;
+
+          // Auto-detect kategori jika tidak ditentukan
+          let category: 'TTU' | 'TTLE' = 'TTLE';
+          if (rawCat === 'TTU' || rawCat === 'UTAMA') {
+            category = 'TTU';
+          } else if (
+            rawEqHours === 12 ||
+            /wakil|wakasek|kakomli|ketua program|kepala bengkel|kepala lab|kepala unit|tefa|kepala perpustakaan/i.test(name)
+          ) {
+            category = 'TTU';
+          } else {
+            category = 'TTLE';
+          }
+
+          const eqHours = category === 'TTU' ? 12 : (rawEqHours > 0 ? rawEqHours : 2);
           const rawCode = String(r.kode_guru || r.kode || r.teacher_code || '').trim().toUpperCase();
           const rawNip = String(r.nip || r.nip_guru || '').trim();
           const rawName = String(r.nama_guru || r.guru || r.teacher_name || '').trim().toLowerCase();
@@ -952,6 +974,7 @@ export async function POST(request: Request) {
 
           await prisma.additionalDuty.create({
             data: {
+              category,
               name,
               equivalentHours: eqHours,
               teacherId,
@@ -964,7 +987,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json({
           success: true,
-          message: `Berhasil mengimpor ${imported} data tugas tambahan.`,
+          message: `Berhasil mengimpor ${imported} data tugas tambahan (sesuai Permendikdasmen No. 11/2025).`,
         });
       }
     }

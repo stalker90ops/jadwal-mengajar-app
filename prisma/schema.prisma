@@ -160,8 +160,10 @@ model Schedule {
 }
 
 // Tugas Tambahan Guru (Wakasek, Wali Kelas, Kepala Lab/Bengkel, Pembina OSIS, dll.)
+// Sesuai Permendikdasmen No. 11 Tahun 2025: TTU (Tugas Tambahan Utama 12 JP) & TTLE (Tugas Tambahan Lain Ekuivalen Maks 6 JP)
 model AdditionalDuty {
   id              String   @id @default(uuid())
+  category        String   @default("TTLE") // "TTU" | "TTLE"
   name            String
   equivalentHours Int      @default(2)
   teacherId       String?

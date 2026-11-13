@@ -215,15 +215,17 @@ export default function AdminScheduleDashboard() {
   const [assignmentFilterTeacherStatus, setAssignmentFilterTeacherStatus] = useState<string>("ALL");
   const [assignmentSearch, setAssignmentSearch] = useState<string>("");
 
-  // Form & Search Tugas Tambahan Guru
+  // Form & Search Tugas Tambahan Guru (Permendikdasmen No. 11/2025)
   const [dutyForm, setDutyForm] = useState<{
     id?: string;
+    category: "TTU" | "TTLE";
     name: string;
     equivalentHours: number;
     teacherId: string;
     nomorSk: string;
     notes: string;
   }>({
+    category: "TTLE",
     name: "",
     equivalentHours: 2,
     teacherId: "",
@@ -1521,6 +1523,7 @@ export default function AdminScheduleDashboard() {
       const data = await res.json();
       if (res.ok && data.item) {
         setDutyForm({
+          category: "TTLE",
           name: "",
           equivalentHours: 2,
           teacherId: "",
@@ -1571,6 +1574,7 @@ export default function AdminScheduleDashboard() {
 
   const handleDownloadDutyTemplate = () => {
     const headers = [
+      "Kategori",
       "Nama_Tugas",
       "Ekuivalensi_JP",
       "Kode_Guru",
@@ -1581,25 +1585,28 @@ export default function AdminScheduleDashboard() {
     ];
     const sampleRows = [
       [
+        "TTU",
         "Wakil Kepala Sekolah Bidang Kurikulum",
         "12",
         teachers[0]?.code || "GR-01",
         teachers[0]?.nip || "197501012000031001",
         teachers[0]?.name || "Drs. H. Ahmad",
         "800/01/SK-SMK/2026",
-        "SK Pembagian Tugas 2026/2027",
+        "SK Pembagian Tugas 2026/2027 (Permendikdasmen 11/2025)",
       ],
       [
-        "Wali Kelas X DKV A",
-        "2",
+        "TTU",
+        "Ketua Program Keahlian (Kakomli)",
+        "12",
         teachers[1]?.code || "GR-02",
         teachers[1]?.nip || "198002022005012002",
         teachers[1]?.name || "Siti Rahma, S.Pd",
         "800/02/SK-SMK/2026",
-        "Wali Kelas X DKV A",
+        "Kepala Konsentrasi Keahlian DKV",
       ],
       [
-        "Kepala Lab Komputer & Jaringan",
+        "TTU",
+        "Kepala Bengkel / Laboratorium",
         "12",
         teachers[2]?.code || "GR-03",
         teachers[2]?.nip || "198503032008011003",
@@ -1608,16 +1615,37 @@ export default function AdminScheduleDashboard() {
         "Penanggung Jawab Bengkel TKJ",
       ],
       [
+        "TTLE",
+        "Wali Kelas X DKV A",
+        "2",
+        teachers[0]?.code || "GR-01",
+        teachers[0]?.nip || "197501012000031001",
+        teachers[0]?.name || "Drs. H. Ahmad",
+        "800/04/SK-SMK/2026",
+        "Wali Kelas (Diakui Administratif karena ada TTU)",
+      ],
+      [
+        "TTLE",
         "Pembina OSIS",
         "2",
         teachers[3]?.code || "GR-04",
         teachers[3]?.nip || "199004042014022004",
         teachers[3]?.name || "Dewi Lestari, S.Pd",
-        "800/04/SK-SMK/2026",
-        "Bidang Kesiswaan",
+        "800/05/SK-SMK/2026",
+        "Bidang Kesiswaan (Maks 6 JP TTLE)",
+      ],
+      [
+        "TTLE",
+        "Koordinator P5",
+        "2",
+        teachers[3]?.code || "GR-04",
+        teachers[3]?.nip || "199004042014022004",
+        teachers[3]?.name || "Dewi Lestari, S.Pd",
+        "800/06/SK-SMK/2026",
+        "Projek Penguatan Profil Pelajar Pancasila",
       ],
     ];
-    downloadCsvFile("Template_Import_Tugas_Tambahan.csv", headers, sampleRows);
+    downloadCsvFile("Template_Import_Tugas_Tambahan_Permendikdasmen_11_2025.csv", headers, sampleRows);
   };
 
   // ==================== IMPORT CSV / EXCEL ====================
@@ -1858,6 +1886,105 @@ export default function AdminScheduleDashboard() {
     }
     return map;
   }, [additionalDuties]);
+
+  // Audit Beban Kerja Guru & Kelayakan Sertifikasi (TPG 24 JP) sesuai Permendikdasmen No. 11 Tahun 2025
+  const teacherWorkloadAuditMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        teachingHours: number;
+        ttuDuties: any[];
+        ttleDuties: any[];
+        hasTTU: boolean;
+        ttuHours: number;
+        ttleTotalHours: number;
+        ttleRecognizedHours: number;
+        recognizedDutyHours: number;
+        realDutyHours: number;
+        totalRecognizedWorkload: number;
+        totalRealWorkload: number;
+        minTeachingRequired: number;
+        isMinTeachingMet: boolean;
+        isTotalMet: boolean;
+        isValidTPG: boolean;
+        tpgStatus: "VALID" | "LACK_TEACHING" | "LACK_TOTAL";
+        statusMessage: string;
+      }
+    >();
+
+    for (const t of teachers) {
+      const teachingHours = schedules.filter((s) => s.teacherId === t.id).length;
+      const duties = additionalDuties.filter((d) => d.teacherId === t.id);
+
+      const ttuDuties = duties.filter(
+        (d) => d.category === "TTU" || d.equivalentHours === 12
+      );
+      const ttleDuties = duties.filter(
+        (d) => d.category !== "TTU" && d.equivalentHours !== 12
+      );
+
+      const hasTTU = ttuDuties.length > 0;
+      const ttuHours = hasTTU ? 12 : 0;
+      const ttleTotalHours = ttleDuties.reduce(
+        (acc, d) => acc + (Number(d.equivalentHours) || 0),
+        0
+      );
+
+      // Sesuai Permendikdasmen 11/2025:
+      // 1. Jika ada TTU, diakui 12 JP (TTLE non-kumulatif untuk TPG, dicatat administratif).
+      // 2. Jika tidak ada TTU, TTLE diakui maksimal 6 JP.
+      const ttleRecognizedHours = hasTTU ? 0 : Math.min(6, ttleTotalHours);
+      const recognizedDutyHours = hasTTU ? 12 : ttleRecognizedHours;
+      const realDutyHours = duties.reduce(
+        (acc, d) => acc + (Number(d.equivalentHours) || 0),
+        0
+      );
+
+      const totalRecognizedWorkload = teachingHours + recognizedDutyHours;
+      const totalRealWorkload = teachingHours + realDutyHours;
+
+      // Batas minimal tatap muka
+      const minTeachingRequired = hasTTU ? 12 : ttleRecognizedHours > 0 ? 18 : 24;
+      const isMinTeachingMet = teachingHours >= minTeachingRequired;
+      const isTotalMet = totalRecognizedWorkload >= 24;
+
+      let tpgStatus: "VALID" | "LACK_TEACHING" | "LACK_TOTAL" = "VALID";
+      let statusMessage = "Valid TPG (≥ 24 JP)";
+
+      if (!isMinTeachingMet && !isTotalMet) {
+        tpgStatus = "LACK_TOTAL";
+        statusMessage = `Kurang ${24 - totalRecognizedWorkload} JP (Tatap Muka ${teachingHours}/${minTeachingRequired} JP)`;
+      } else if (!isMinTeachingMet) {
+        tpgStatus = "LACK_TEACHING";
+        statusMessage = `Kurang ${minTeachingRequired - teachingHours} JP Tatap Muka (Min. ${minTeachingRequired} JP)`;
+      } else if (!isTotalMet) {
+        tpgStatus = "LACK_TOTAL";
+        statusMessage = `Kurang ${24 - totalRecognizedWorkload} JP untuk Syarat 24 JP`;
+      }
+
+      map.set(t.id, {
+        teachingHours,
+        ttuDuties,
+        ttleDuties,
+        hasTTU,
+        ttuHours,
+        ttleTotalHours,
+        ttleRecognizedHours,
+        recognizedDutyHours,
+        realDutyHours,
+        totalRecognizedWorkload,
+        totalRealWorkload,
+        minTeachingRequired,
+        isMinTeachingMet,
+        isTotalMet,
+        isValidTPG: isMinTeachingMet && isTotalMet,
+        tpgStatus,
+        statusMessage,
+      });
+    }
+
+    return map;
+  }, [teachers, schedules, additionalDuties]);
 
   const filteredDuties = useMemo(() => {
     if (!dutySearch.trim()) return additionalDuties;
@@ -3312,29 +3439,44 @@ export default function AdminScheduleDashboard() {
           {/* Tabel Daftar Guru */}
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="font-bold text-slate-900">
-                Daftar Guru & Ketersediaan Hari Aktif ({teachers.length})
-              </h3>
+              <div>
+                <h3 className="font-bold text-slate-900">
+                  Daftar Guru & Ketersediaan Hari Aktif ({teachers.length})
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Audit Beban Kerja & Kelayakan Sertifikasi TPG (24 JP) sesuai Permendikdasmen No. 11 Tahun 2025
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md font-bold">
+                  {teachers.filter((t) => teacherWorkloadAuditMap.get(t.id)?.isValidTPG).length} Valid TPG
+                </span>
+                <span className="px-2 py-0.5 bg-red-100 text-red-800 rounded-md font-bold">
+                  {teachers.filter((t) => !teacherWorkloadAuditMap.get(t.id)?.isValidTPG).length} Belum Memenuhi
+                </span>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-sm">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-xs">
                     <th className="py-3 px-4 font-semibold">Kode</th>
-                    <th className="py-3 px-4 font-semibold">Nama Guru</th>
+                    <th className="py-3 px-4 font-semibold">Nama Guru & Tugas Tambahan</th>
                     <th className="py-3 px-4 font-semibold">Hari Keaktifan</th>
-                    <th className="py-3 px-4 font-semibold">Terjadwal / Maks JP</th>
+                    <th className="py-3 px-4 font-semibold">Beban Jam Riil</th>
+                    <th className="py-3 px-4 font-semibold">Validasi TPG (Permendikdasmen 11/2025)</th>
                     <th className="py-3 px-4 font-semibold text-right">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-slate-200 text-xs">
                   {teachers.map((t) => {
                     const days = parseJsonNumberArray(t.activeDays);
-                    const scheduledCount = teacherScheduledCountMap.get(t.id) || 0;
-                    const dutyHours = teacherDutyHoursMap.get(t.id) || 0;
+                    const audit = teacherWorkloadAuditMap.get(t.id);
+                    const scheduledCount = audit?.teachingHours || 0;
+                    const dutyHours = audit?.realDutyHours || 0;
                     const duties = teacherDutiesMap.get(t.id) || [];
-                    const totalWorkload = scheduledCount + dutyHours;
-                    const isOverload = totalWorkload > t.maxPeriods;
+                    const totalRealWorkload = audit?.totalRealWorkload || (scheduledCount + dutyHours);
+                    const isOverload = totalRealWorkload > t.maxPeriods;
                     return (
                       <tr key={t.id} className="hover:bg-slate-50">
                         <td className="py-3 px-4 font-bold text-blue-700">{t.code}</td>
@@ -3343,16 +3485,25 @@ export default function AdminScheduleDashboard() {
                           {t.nip && <div className="text-xs text-slate-500">NIP: {t.nip}</div>}
                           {duties.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {duties.map((d: any) => (
-                                <span
-                                  key={d.id}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-800 border border-amber-200"
-                                  title={`${d.name} (${d.equivalentHours} JP)`}
-                                >
-                                  <Briefcase className="w-2.5 h-2.5 text-amber-600" />
-                                  <span>{d.name} (+{d.equivalentHours} JP)</span>
-                                </span>
-                              ))}
+                              {duties.map((d: any) => {
+                                const isTTU = d.category === "TTU" || d.equivalentHours === 12;
+                                return (
+                                  <span
+                                    key={d.id}
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                      isTTU
+                                        ? "bg-indigo-50 text-indigo-800 border-indigo-200"
+                                        : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                    }`}
+                                    title={`${isTTU ? "Tugas Tambahan Utama" : "Tugas Tambahan Lain"}: ${d.name} (${d.equivalentHours} JP)`}
+                                  >
+                                    <Briefcase className="w-2.5 h-2.5" />
+                                    <span>
+                                      {isTTU ? "TTU" : "TTLE"}: {d.name} (+{d.equivalentHours} JP)
+                                    </span>
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
                         </td>
@@ -3377,7 +3528,7 @@ export default function AdminScheduleDashboard() {
                         </td>
                         <td className="py-3 px-4">
                           <div className="font-bold text-slate-800 text-sm">
-                            {totalWorkload} / {t.maxPeriods} JP
+                            {totalRealWorkload} / {t.maxPeriods} JP
                           </div>
                           <div className="text-[11px] text-slate-500 space-x-1.5 mt-0.5">
                             <span>Tatap Muka: <strong>{scheduledCount}</strong></span>
@@ -3389,8 +3540,47 @@ export default function AdminScheduleDashboard() {
                           </div>
                           {isOverload && (
                             <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
-                              Overload (+{totalWorkload - t.maxPeriods} JP)
+                              Overload (+{totalRealWorkload - t.maxPeriods} JP)
                             </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          {audit?.isValidTPG ? (
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Valid TPG (≥ 24 JP)</span>
+                              </span>
+                              <div className="text-[11px] text-emerald-700 font-medium">
+                                Diakui: {audit.teachingHours} TM + {audit.recognizedDutyHours} Tugas = {audit.totalRecognizedWorkload} JP
+                              </div>
+                              {audit.hasTTU && audit.ttleTotalHours > 0 && (
+                                <div className="text-[10px] text-slate-400 italic">
+                                  (+{audit.ttleTotalHours} JP TTLE dicatat administratif)
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-0.5">
+                              <span
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold border ${
+                                  audit?.tpgStatus === "LACK_TEACHING"
+                                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                                    : "bg-red-100 text-red-800 border-red-300"
+                                }`}
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5" />
+                                <span>
+                                  {audit?.tpgStatus === "LACK_TEACHING" ? "Kurang Tatap Muka" : "Kurang Jam TPG"}
+                                </span>
+                              </span>
+                              <div className="text-[11px] text-slate-600 font-medium">
+                                {audit?.statusMessage}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                Diakui: {audit?.teachingHours || 0} TM + {audit?.recognizedDutyHours || 0} Tugas = {audit?.totalRecognizedWorkload || 0}/24 JP
+                              </div>
+                            </div>
                           )}
                         </td>
                         <td className="py-3 px-4 text-right space-x-2">
@@ -4605,7 +4795,7 @@ export default function AdminScheduleDashboard() {
             </div>
           </div>
 
-          {/* Statistik Ringkasan Tugas Tambahan */}
+          {/* Statistik Ringkasan Tugas Tambahan (Permendikdasmen No. 11/2025) */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
               <div className="text-xs text-slate-500 font-medium">Total Tugas Tambahan</div>
@@ -4614,25 +4804,29 @@ export default function AdminScheduleDashboard() {
                 <span className="text-xs font-normal text-slate-400">Posisi</span>
               </div>
             </div>
-            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 font-medium">Total Ekuivalensi JP</div>
-              <div className="text-2xl font-black text-amber-600 mt-1">
-                {additionalDuties.reduce((acc, d) => acc + (Number(d.equivalentHours) || 0), 0)}{" "}
-                <span className="text-xs font-normal text-slate-400">JP / Minggu</span>
+            <div className="p-4 bg-white rounded-2xl border border-blue-200 bg-blue-50/20 shadow-sm">
+              <div className="text-xs text-blue-700 font-semibold flex items-center gap-1">
+                <span>🔵 Tugas Utama (TTU)</span>
+              </div>
+              <div className="text-2xl font-black text-blue-800 mt-1">
+                {additionalDuties.filter((d) => d.category === "TTU" || d.equivalentHours === 12).length}{" "}
+                <span className="text-xs font-normal text-blue-600">Posisi (12 JP)</span>
+              </div>
+            </div>
+            <div className="p-4 bg-white rounded-2xl border border-emerald-200 bg-emerald-50/20 shadow-sm">
+              <div className="text-xs text-emerald-700 font-semibold flex items-center gap-1">
+                <span>🟢 Tugas Lain (TTLE)</span>
+              </div>
+              <div className="text-2xl font-black text-emerald-800 mt-1">
+                {additionalDuties.filter((d) => d.category !== "TTU" && d.equivalentHours !== 12).length}{" "}
+                <span className="text-xs font-normal text-emerald-600">Posisi (Maks 6 JP)</span>
               </div>
             </div>
             <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 font-medium">Guru dengan Tugas Tambahan</div>
-              <div className="text-2xl font-black text-blue-600 mt-1">
-                {new Set(additionalDuties.map((d) => d.teacherId).filter(Boolean)).size}{" "}
-                <span className="text-xs font-normal text-slate-400">Guru</span>
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm">
-              <div className="text-xs text-slate-500 font-medium">Tugas Belum Terisi Guru</div>
-              <div className="text-2xl font-black text-slate-700 mt-1">
-                {additionalDuties.filter((d) => !d.teacherId).length}{" "}
-                <span className="text-xs font-normal text-slate-400">Posisi TBD</span>
+              <div className="text-xs text-slate-500 font-medium">Guru Lolos Syarat TPG</div>
+              <div className="text-2xl font-black text-emerald-600 mt-1">
+                {Array.from(teacherWorkloadAuditMap.values()).filter((a) => a.isValidTPG).length}{" "}
+                <span className="text-xs font-normal text-slate-400">/ {teachers.length} Guru</span>
               </div>
             </div>
           </div>
@@ -4654,6 +4848,119 @@ export default function AdminScheduleDashboard() {
               </div>
 
               <form onSubmit={handleSaveDuty} className="space-y-4 text-xs">
+                {/* Pilihan Kategori: TTU vs TTLE sesuai Permendikdasmen 11/2025 */}
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                    <span>Kategori Tugas (Permendikdasmen 11/2025) *</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Standar Resmi</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDutyForm({
+                          ...dutyForm,
+                          category: "TTU",
+                          equivalentHours: 12,
+                        })
+                      }
+                      className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all text-center ${
+                        dutyForm.category === "TTU"
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      🔵 TTU (Utama - 12 JP)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDutyForm({
+                          ...dutyForm,
+                          category: "TTLE",
+                          equivalentHours: dutyForm.equivalentHours === 12 ? 2 : dutyForm.equivalentHours || 2,
+                        })
+                      }
+                      className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all text-center ${
+                        dutyForm.category === "TTLE"
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      🟢 TTLE (Lain - Maks 6 JP)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preset Cepat Berdasarkan Kategori */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                    ⚡ Preset Pilihan Cepat ({dutyForm.category === "TTU" ? "Tugas Utama" : "Tugas Lain Ekuivalen"}):
+                  </label>
+                  <div className="flex flex-wrap gap-1">
+                    {dutyForm.category === "TTU" ? (
+                      [
+                        { label: "Wakil Kepala Sekolah", jp: 12 },
+                        { label: "Ketua Program Keahlian (Kakomli)", jp: 12 },
+                        { label: "Kepala Bengkel SMK", jp: 12 },
+                        { label: "Kepala Unit Produksi / TeFa", jp: 12 },
+                        { label: "Kepala Laboratorium", jp: 12 },
+                        { label: "Kepala Perpustakaan", jp: 12 },
+                      ].map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() =>
+                            setDutyForm({
+                              ...dutyForm,
+                              name: preset.label,
+                              equivalentHours: preset.jp,
+                            })
+                          }
+                          className={`text-[10px] px-2 py-1 rounded-md border transition-all text-left ${
+                            dutyForm.name === preset.label
+                              ? "bg-blue-100 text-blue-900 border-blue-300 font-bold"
+                              : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-blue-50 hover:text-blue-700"
+                          }`}
+                        >
+                          {preset.label} (12 JP)
+                        </button>
+                      ))
+                    ) : (
+                      [
+                        { label: "Wali Kelas", jp: 2 },
+                        { label: "Pembina OSIS", jp: 2 },
+                        { label: "Koordinator P5", jp: 2 },
+                        { label: "Pembina Ekstrakurikuler", jp: 2 },
+                        { label: "Koordinator TPPK", jp: 2 },
+                        { label: "Anggota TPPK", jp: 1 },
+                        { label: "Ketua BKK / LSP SMK", jp: 2 },
+                        { label: "Guru Piket", jp: 1 },
+                        { label: "Kepanitiaan Sekolah", jp: 1 },
+                      ].map((preset, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() =>
+                            setDutyForm({
+                              ...dutyForm,
+                              name: preset.label,
+                              equivalentHours: preset.jp,
+                            })
+                          }
+                          className={`text-[10px] px-2 py-1 rounded-md border transition-all text-left ${
+                            dutyForm.name === preset.label
+                              ? "bg-emerald-100 text-emerald-900 border-emerald-300 font-bold"
+                              : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700"
+                          }`}
+                        >
+                          {preset.label} ({preset.jp} JP)
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">
                     Nama Tugas Tambahan *
@@ -4661,7 +4968,11 @@ export default function AdminScheduleDashboard() {
                   <input
                     type="text"
                     required
-                    placeholder="cth: Wakil Kepala Sekolah Bidang Kurikulum"
+                    placeholder={
+                      dutyForm.category === "TTU"
+                        ? "cth: Wakil Kepala Sekolah Bidang Kurikulum"
+                        : "cth: Wali Kelas X DKV A"
+                    }
                     value={dutyForm.name}
                     onChange={(e) => setDutyForm({ ...dutyForm, name: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
@@ -4669,45 +4980,56 @@ export default function AdminScheduleDashboard() {
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">
-                    Ekuivalensi Jam (JP) *
+                  <label className="block font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Ekuivalensi Jam (JP) *</span>
+                    {dutyForm.category === "TTU" && (
+                      <span className="text-[10px] font-bold text-blue-700">Terkunci 12 JP (Standar TTU)</span>
+                    )}
                   </label>
                   <input
                     type="number"
                     min={1}
-                    max={36}
+                    max={dutyForm.category === "TTU" ? 12 : 6}
                     required
-                    value={dutyForm.equivalentHours}
+                    disabled={dutyForm.category === "TTU"}
+                    value={dutyForm.category === "TTU" ? 12 : dutyForm.equivalentHours}
                     onChange={(e) =>
                       setDutyForm({
                         ...dutyForm,
                         equivalentHours: Number(e.target.value) || 2,
                       })
                     }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    className={`w-full px-3 py-2 border rounded-lg text-xs font-bold text-slate-800 ${
+                      dutyForm.category === "TTU"
+                        ? "bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed"
+                        : "border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 bg-white"
+                    }`}
                   />
-                  <div className="flex flex-wrap gap-1 mt-1.5">
-                    <span className="text-[10px] text-slate-400 self-center mr-1">Rekomendasi:</span>
-                    {[
-                      { label: "Wali Kelas (2 JP)", jp: 2 },
-                      { label: "Pembina OSIS (2 JP)", jp: 2 },
-                      { label: "Ka. Lab / Bengkel (12 JP)", jp: 12 },
-                      { label: "Wakasek (12 JP)", jp: 12 },
-                    ].map((rec, idx) => (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => setDutyForm({ ...dutyForm, equivalentHours: rec.jp })}
-                        className={`text-[10px] px-2 py-0.5 rounded-md border transition-all ${
-                          dutyForm.equivalentHours === rec.jp
-                            ? "bg-amber-100 text-amber-900 border-amber-300 font-bold"
-                            : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                        }`}
-                      >
-                        {rec.label}
-                      </button>
-                    ))}
-                  </div>
+                </div>
+
+                {/* Info Regulasi Permendikdasmen No. 11 Tahun 2025 */}
+                <div
+                  className={`p-2.5 rounded-xl border text-[11px] leading-relaxed ${
+                    dutyForm.category === "TTU"
+                      ? "bg-blue-50/70 border-blue-200 text-blue-900"
+                      : "bg-emerald-50/70 border-emerald-200 text-emerald-900"
+                  }`}
+                >
+                  {dutyForm.category === "TTU" ? (
+                    <div>
+                      <strong>📌 Regulasi TTU (Permendikdasmen 11/2025):</strong>
+                      <p className="mt-0.5 text-[10px]">
+                        Diakui <strong>12 JP</strong> untuk ekuivalensi TPG. Guru wajib mengajar tatap muka minimal <strong>12 JP</strong> agar valid 24 JP TPG.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <strong>📌 Regulasi TTLE (Permendikdasmen 11/2025):</strong>
+                      <p className="mt-0.5 text-[10px]">
+                        Ekuivalensi TTLE diakui <strong>maksimal 6 JP</strong> untuk TPG. Guru wajib mengajar tatap muka minimal <strong>18 JP</strong>.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -4718,13 +5040,14 @@ export default function AdminScheduleDashboard() {
                     options={[
                       { value: "", label: "-- Belum Ditugaskan / TBD --" },
                       ...teachers.map((t) => {
-                        const currentTeaching = teacherScheduledCountMap.get(t.id) || 0;
-                        const currentDuty = teacherDutyHoursMap.get(t.id) || 0;
+                        const audit = teacherWorkloadAuditMap.get(t.id);
+                        const teaching = audit?.teachingHours || 0;
+                        const dutyH = audit?.realDutyHours || 0;
                         return {
                           value: t.id,
                           label: t.name,
                           badge: t.code,
-                          subLabel: `Beban: ${currentTeaching + currentDuty}/${t.maxPeriods} JP (Tugas: ${currentDuty} JP)`,
+                          subLabel: `Tatap Muka: ${teaching} JP • Tugas: ${dutyH} JP • ${audit?.isValidTPG ? "🟢 TPG OK" : "🔴 Kurang JP"}`,
                         };
                       }),
                     ]}
@@ -4768,7 +5091,7 @@ export default function AdminScheduleDashboard() {
                   <button
                     type="submit"
                     disabled={busyAction}
-                    className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-semibold py-2.5 rounded-lg text-xs transition-colors shadow-sm shadow-amber-600/20"
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg text-xs transition-colors shadow-sm shadow-blue-600/20"
                   >
                     {dutyForm.id ? "Simpan Perubahan" : "Tambah Tugas Tambahan"}
                   </button>
@@ -4777,6 +5100,7 @@ export default function AdminScheduleDashboard() {
                       type="button"
                       onClick={() =>
                         setDutyForm({
+                          category: "TTLE",
                           name: "",
                           equivalentHours: 2,
                           teacherId: "",
@@ -4817,10 +5141,10 @@ export default function AdminScheduleDashboard() {
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                      <th className="py-3 px-4">Nama Tugas & No. SK</th>
+                      <th className="py-3 px-4">Kategori & Tugas</th>
                       <th className="py-3 px-4 text-center">Ekuivalensi JP</th>
                       <th className="py-3 px-4">Guru Pengampu</th>
-                      <th className="py-3 px-4">Keterangan</th>
+                      <th className="py-3 px-4">Audit TPG Guru</th>
                       <th className="py-3 px-4 text-right">Aksi</th>
                     </tr>
                   </thead>
@@ -4836,11 +5160,23 @@ export default function AdminScheduleDashboard() {
                     ) : (
                       filteredDuties.map((duty: any) => {
                         const assignedTeacher = duty.teacher;
+                        const isTTU = duty.category === "TTU" || Number(duty.equivalentHours) === 12;
+                        const audit = assignedTeacher ? teacherWorkloadAuditMap.get(assignedTeacher.id) : null;
                         return (
                           <tr key={duty.id} className="hover:bg-slate-50 transition-colors">
                             <td className="py-3 px-4">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                {isTTU ? (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+                                    🔵 TTU (12 JP)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    🟢 TTLE
+                                  </span>
+                                )}
+                              </div>
                               <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                                <Briefcase className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                                 <span>{duty.name}</span>
                               </div>
                               {duty.nomorSk ? (
@@ -4852,9 +5188,20 @@ export default function AdminScheduleDashboard() {
                                   Belum ada nomor SK
                                 </div>
                               )}
+                              {duty.notes && (
+                                <div className="text-[10px] text-slate-500 mt-0.5">
+                                  Catatan: {duty.notes}
+                                </div>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-center">
-                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-sm">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border shadow-sm ${
+                                  isTTU
+                                    ? "bg-blue-100 text-blue-900 border-blue-300"
+                                    : "bg-emerald-100 text-emerald-900 border-emerald-300"
+                                }`}
+                              >
                                 +{duty.equivalentHours} JP
                               </span>
                             </td>
@@ -4879,8 +5226,29 @@ export default function AdminScheduleDashboard() {
                                 </span>
                               )}
                             </td>
-                            <td className="py-3 px-4 max-w-[200px] truncate text-slate-600">
-                              {duty.notes || "-"}
+                            <td className="py-3 px-4">
+                              {audit ? (
+                                <div className="space-y-1">
+                                  {audit.isValidTPG ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                      🟢 Valid TPG ({audit.totalRecognizedWorkload} JP)
+                                    </span>
+                                  ) : !audit.isMinTeachingMet ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                                      🟡 Kurang Tatap Muka ({audit.teachingHours}/{audit.minTeachingRequired} JP)
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-300">
+                                      🔴 Kurang Jam ({audit.totalRecognizedWorkload}/24 JP)
+                                    </span>
+                                  )}
+                                  <div className="text-[10px] text-slate-500">
+                                    TM: {audit.teachingHours} JP | Tugas Diakui: +{audit.recognizedDutyHours} JP
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 text-[11px]">-</span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
                               <button
@@ -4888,6 +5256,7 @@ export default function AdminScheduleDashboard() {
                                 onClick={() =>
                                   setDutyForm({
                                     id: duty.id,
+                                    category: (duty.category as "TTU" | "TTLE") || (duty.equivalentHours === 12 ? "TTU" : "TTLE"),
                                     name: duty.name,
                                     equivalentHours: duty.equivalentHours,
                                     teacherId: duty.teacherId || "",
