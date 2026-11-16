@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import bcrypt from 'bcrypt';
+import { cookies } from 'next/headers';
+import { verifyToken } from '@/lib/auth';
 import {
   auditAllSchedules,
   ScheduleWithRelations,
@@ -440,6 +443,42 @@ export async function POST(request: Request) {
     }
 
     if (action === 'clear_unlocked') {
+      const password = String(body.password || '');
+      if (!password) {
+        return NextResponse.json(
+          { error: 'Password Admin wajib diisi untuk mengosongkan jadwal.' },
+          { status: 401 }
+        );
+      }
+
+      let isAuthorized = false;
+      const token = cookies().get('admin_token')?.value;
+      const payload = token ? await verifyToken(token) : null;
+
+      if (payload?.id) {
+        const currentAdmin = await prisma.user.findUnique({
+          where: { id: String(payload.id) },
+        });
+        if (currentAdmin) {
+          isAuthorized = await bcrypt.compare(password, currentAdmin.password_hash);
+        }
+      } else {
+        const admins = await prisma.user.findMany({ where: { role: 'ADMIN' } });
+        for (const admin of admins) {
+          if (await bcrypt.compare(password, admin.password_hash)) {
+            isAuthorized = true;
+            break;
+          }
+        }
+      }
+
+      if (!isAuthorized) {
+        return NextResponse.json(
+          { error: 'Password Admin salah! Aksi kosongkan jadwal dibatalkan.' },
+          { status: 401 }
+        );
+      }
+
       const deleted = await prisma.schedule.deleteMany({
         where: { isLocked: false },
       });

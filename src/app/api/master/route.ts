@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { ensureDefaultActiveDays, seedSampleSchoolData, DEFAULT_TIME_SLOTS, FRIDAY_TIME_SLOTS } from '@/lib/seed-data';
+import { ensureDefaultActiveDays, DEFAULT_TIME_SLOTS, FRIDAY_TIME_SLOTS } from '@/lib/seed-data';
 import { auditAllSchedules, ScheduleWithRelations } from '@/lib/schedule-validator';
 import { parseActiveDaysInput } from '@/lib/csv-helper';
 
@@ -123,14 +123,6 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { entity, action, data } = body;
-
-    if (entity === 'seed') {
-      await seedSampleSchoolData();
-      return NextResponse.json({
-        success: true,
-        message: 'Data contoh sekolah berhasil dimuat.',
-      });
-    }
 
     // ==================== GURU ====================
     if (entity === 'teacher') {

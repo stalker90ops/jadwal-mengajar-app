@@ -82,6 +82,11 @@ export default function AdminScheduleDashboard() {
 
   // Modal Tambah/Edit Jadwal Manual
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  // Modal Konfirmasi Password Kosongkan Jadwal
+  const [showClearScheduleModal, setShowClearScheduleModal] = useState(false);
+  const [clearPassword, setClearPassword] = useState("");
+  const [clearPasswordError, setClearPasswordError] = useState("");
   const [scheduleForm, setScheduleForm] = useState<{
     id?: string;
     activeDayId: string;
@@ -727,27 +732,7 @@ export default function AdminScheduleDashboard() {
     setBanner({ type, text });
   };
 
-  // ==================== SEED & AUTO-GENERATE ====================
-  const handleSeedSample = async () => {
-    setBusyAction(true);
-    try {
-      const res = await fetch("/api/master", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entity: "seed" }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showMessage("success", data.message || "Data contoh berhasil dimuat!");
-        await loadAllData();
-      } else {
-        showMessage("error", data.error || "Gagal memuat data contoh");
-      }
-    } finally {
-      setBusyAction(false);
-    }
-  };
-
+  // ==================== AUTO-GENERATE ====================
   const handleAutoGenerate = async () => {
     setBusyAction(true);
     const steps: ProgressStep[] = [
@@ -889,19 +874,34 @@ export default function AdminScheduleDashboard() {
     }
   };
 
-  const handleClearUnlocked = async () => {
-    if (!confirm("Hapus seluruh jadwal yang tidak dikunci?")) return;
+  const handleClearUnlocked = () => {
+    setClearPassword("");
+    setClearPasswordError("");
+    setShowClearScheduleModal(true);
+  };
+
+  const handleConfirmClearUnlocked = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clearPassword.trim()) {
+      setClearPasswordError("Harap masukkan password Admin terlebih dahulu.");
+      return;
+    }
     setBusyAction(true);
+    setClearPasswordError("");
     try {
       const res = await fetch("/api/roster/schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "clear_unlocked" }),
+        body: JSON.stringify({ action: "clear_unlocked", password: clearPassword }),
       });
       const data = await res.json();
       if (res.ok) {
+        setShowClearScheduleModal(false);
+        setClearPassword("");
         showMessage("info", data.message || "Jadwal berhasil dikosongkan.");
         await loadAllData();
+      } else {
+        setClearPasswordError(data.error || "Password salah atau gagal mengosongkan jadwal.");
       }
     } finally {
       setBusyAction(false);
@@ -2371,15 +2371,6 @@ export default function AdminScheduleDashboard() {
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={handleSeedSample}
-              disabled={busyAction}
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs sm:text-sm font-semibold transition-colors"
-            >
-              <Database className="w-4 h-4 text-blue-600" />
-              <span>Muat Data Contoh</span>
-            </button>
-
-            <button
               onClick={handleAutoGenerate}
               disabled={busyAction}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-md shadow-blue-600/20 transition-all disabled:opacity-60"
@@ -2781,15 +2772,8 @@ export default function AdminScheduleDashboard() {
                   Data Master (Guru, Mapel, Kelas, Ruangan) masih kosong.
                 </p>
                 <p className="text-xs text-slate-500">
-                  Klik tombol <strong>Muat Data Contoh</strong> di kanan atas untuk mengisi data contoh siap pakai, atau import file CSV/Excel Anda pada tab masing-masing.
+                  Silakan buka tab <strong>2. Referensi Data Sekolah</strong> untuk menginput atau mengimpor data Guru, Mata Pelajaran, Ruangan, dan Kelas dari file CSV/Excel.
                 </p>
-                <button
-                  onClick={handleSeedSample}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold"
-                >
-                  <Database className="w-4 h-4" />
-                  Muat Data Contoh Sekarang
-                </button>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -6101,6 +6085,78 @@ export default function AdminScheduleDashboard() {
                       : "Simpan Jadwal"}
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL KONFIRMASI PASSWORD KOSONGKAN JADWAL ==================== */}
+      {showClearScheduleModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-red-200 overflow-hidden">
+            <div className="p-5 bg-red-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Lock className="w-5 h-5" />
+                <div>
+                  <h3 className="font-bold text-base">Konfirmasi Kosongkan Jadwal</h3>
+                  <p className="text-[11px] text-red-100">
+                    Memerlukan Password Admin untuk keamanan data
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowClearScheduleModal(false)}
+                className="text-red-100 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmClearUnlocked} className="p-5 space-y-4 text-sm">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-900 leading-relaxed">
+                <strong>⚠️ Peringatan:</strong> Seluruh jadwal mengajar yang <strong>tidak dikunci</strong> akan dihapus permanen. Jadwal yang bertanda kunci (🔒) tetap aman.
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Masukkan Password Admin *
+                </label>
+                <input
+                  type="password"
+                  required
+                  autoFocus
+                  placeholder="Ketik password akun Admin..."
+                  value={clearPassword}
+                  onChange={(e) => {
+                    setClearPassword(e.target.value);
+                    if (clearPasswordError) setClearPasswordError("");
+                  }}
+                  className="w-full px-3.5 py-2.5 border border-slate-300 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 rounded-xl text-sm outline-none"
+                />
+                {clearPasswordError && (
+                  <p className="text-xs font-semibold text-red-600 mt-1.5">
+                    {clearPasswordError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowClearScheduleModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-semibold text-xs"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={busyAction}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-xl font-bold text-xs shadow-sm shadow-red-600/20"
+                >
+                  {busyAction ? "Memverifikasi..." : "Kosongkan Jadwal Sekarang"}
+                </button>
               </div>
             </form>
           </div>
