@@ -13,7 +13,7 @@ export async function GET() {
       hasEnsuredActiveDays = true;
     }
 
-    const [activeDays, teachers, subjects, rooms, classes, assignments, schedules, curriculumStandards, additionalDuties] = await Promise.all([
+    const [activeDays, teachers, subjects, rooms, classes, assignments, schedules, curriculumStandards, additionalDuties, rawPrintConfig] = await Promise.all([
       prisma.activeDay.findMany({
         orderBy: { dayNumber: 'asc' },
         include: {
@@ -73,7 +73,23 @@ export async function GET() {
         },
         orderBy: { name: 'asc' },
       }),
+      prisma.schoolPrintConfig.findUnique({
+        where: { id: 'default' },
+      }),
     ]);
+
+    const printConfig = rawPrintConfig ?? {
+      id: 'default',
+      logoDataUrl: null,
+      govLine: 'PEMERINTAH PROVINSI SULAWESI SELATAN',
+      deptLine: 'DINAS PENDIDIKAN',
+      schoolName: 'UPT SMK NEGERI 2 PAREPARE',
+      addressLine: 'Jl. Jend. Ahmad Yani No. 151 ☎ (0421) 21962 - Fax. (0421) 28149 Parepare 91131',
+      contactLine: 'Email: smkn2pare2@gmail.com     Website: www.smknegeri2parepare.sch.id',
+      docTitle: 'JADWAL PELAKSANAAN PEMBELAJARAN TATAP MUKA DI KELAS',
+      semesterTp: 'Ganjil / 2026-2027',
+      effectiveDate: '13 Juli 2026',
+    };
 
     const audit = auditAllSchedules(schedules as unknown as ScheduleWithRelations[]);
 
@@ -88,6 +104,7 @@ export async function GET() {
         schedules,
         curriculumStandards,
         additionalDuties,
+        printConfig,
         audit,
       },
       {
@@ -988,6 +1005,57 @@ export async function POST(request: Request) {
         return NextResponse.json({
           success: true,
           message: `Berhasil mengimpor ${imported} data tugas tambahan (sesuai Permendikdasmen No. 11/2025).`,
+        });
+      }
+    }
+
+    // ==================== PENGATURAN KOP SURAT & CETAK RESMI ====================
+    if (entity === 'print_config') {
+      if (action === 'update') {
+        const logoDataUrl =
+          data.logoDataUrl === null || data.logoDataUrl === ''
+            ? null
+            : String(data.logoDataUrl);
+        const govLine = String(data.govLine ?? '').trim() || 'PEMERINTAH PROVINSI SULAWESI SELATAN';
+        const deptLine = String(data.deptLine ?? '').trim() || 'DINAS PENDIDIKAN';
+        const schoolName = String(data.schoolName ?? '').trim() || 'UPT SMK NEGERI 2 PAREPARE';
+        const addressLine = String(data.addressLine ?? '').trim();
+        const contactLine = String(data.contactLine ?? '').trim();
+        const docTitle = String(data.docTitle ?? '').trim() || 'JADWAL PELAKSANAAN PEMBELAJARAN TATAP MUKA DI KELAS';
+        const semesterTp = String(data.semesterTp ?? '').trim() || 'Ganjil / 2026-2027';
+        const effectiveDate = String(data.effectiveDate ?? '').trim() || '13 Juli 2026';
+
+        const updated = await prisma.schoolPrintConfig.upsert({
+          where: { id: 'default' },
+          create: {
+            id: 'default',
+            logoDataUrl,
+            govLine,
+            deptLine,
+            schoolName,
+            addressLine,
+            contactLine,
+            docTitle,
+            semesterTp,
+            effectiveDate,
+          },
+          update: {
+            logoDataUrl,
+            govLine,
+            deptLine,
+            schoolName,
+            addressLine,
+            contactLine,
+            docTitle,
+            semesterTp,
+            effectiveDate,
+          },
+        });
+
+        return NextResponse.json({
+          success: true,
+          item: updated,
+          message: 'Pengaturan Kop Surat & Cetak Resmi berhasil disimpan.',
         });
       }
     }

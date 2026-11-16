@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo, Suspense } from "react";
+import React, { useEffect, useState, useMemo, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -9,11 +9,7 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
-  UserCheck,
-  Award,
-  BookOpen,
-  Calendar,
-  Layers,
+  Settings,
 } from "lucide-react";
 
 interface TimeSlot {
@@ -71,6 +67,30 @@ interface ScheduleItem {
   room?: { id: string; name: string; code: string };
 }
 
+interface PrintConfig {
+  logoDataUrl: string | null;
+  govLine: string;
+  deptLine: string;
+  schoolName: string;
+  addressLine: string;
+  contactLine: string;
+  docTitle: string;
+  semesterTp: string;
+  effectiveDate: string;
+}
+
+const DEFAULT_PRINT_CONFIG: PrintConfig = {
+  logoDataUrl: null,
+  govLine: "PEMERINTAH PROVINSI SULAWESI SELATAN",
+  deptLine: "DINAS PENDIDIKAN",
+  schoolName: "UPT SMK NEGERI 2 PAREPARE",
+  addressLine: "Jl. Jend. Ahmad Yani No. 151 ☎ (0421) 21962 - Fax. (0421) 28149 Parepare 91131",
+  contactLine: "Email: smkn2pare2@gmail.com     Website: www.smknegeri2parepare.sch.id",
+  docTitle: "JADWAL PELAKSANAAN PEMBELAJARAN TATAP MUKA DI KELAS",
+  semesterTp: "Ganjil / 2026-2027",
+  effectiveDate: "13 Juli 2026",
+};
+
 function TeacherPrintContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -81,8 +101,11 @@ function TeacherPrintContent() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [additionalDuties, setAdditionalDuties] = useState<AdditionalDuty[]>([]);
+  const [printConfig, setPrintConfig] = useState<PrintConfig>(DEFAULT_PRINT_CONFIG);
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>("");
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [autoZoom, setAutoZoom] = useState<number>(1);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -96,6 +119,12 @@ function TeacherPrintContent() {
           setTeachers(tList);
           setSchedules(data.schedules || []);
           setAdditionalDuties(data.additionalDuties || []);
+          if (data.printConfig) {
+            setPrintConfig({
+              ...DEFAULT_PRINT_CONFIG,
+              ...data.printConfig,
+            });
+          }
 
           if (requestedTeacherId && tList.some((t) => t.id === requestedTeacherId)) {
             setSelectedTeacherId(requestedTeacherId);
@@ -136,7 +165,6 @@ function TeacherPrintContent() {
     }
   };
 
-  // Filter jadwal dan tugas tambahan guru terpilih
   const teacherSchedules = useMemo(() => {
     if (!selectedTeacherId) return [];
     return schedules.filter((s) => s.teacherId === selectedTeacherId);
@@ -147,7 +175,6 @@ function TeacherPrintContent() {
     return additionalDuties.filter((d) => d.teacherId === selectedTeacherId);
   }, [additionalDuties, selectedTeacherId]);
 
-  // Perhitungan beban mengajar dan Permendikdasmen No. 11/2025
   const auditSummary = useMemo(() => {
     const teachingHours = teacherSchedules.length;
     let ttuHours = 0;
@@ -189,14 +216,17 @@ function TeacherPrintContent() {
     };
   }, [teacherSchedules, teacherDuties]);
 
-  // Handler Download PDF Langsung dari API
   const handleDownloadPdf = async () => {
     if (!selectedTeacherId) return;
     try {
       setDownloadingPdf(true);
       const res = await fetch(`/api/roster/print-teacher-pdf?id=${selectedTeacherId}`);
       if (!res.ok) {
-        // Fallback jika API headless belum siap: gunakan print dialog
+        window.print();
+        return;
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/pdf")) {
         window.print();
         return;
       }
@@ -218,7 +248,6 @@ function TeacherPrintContent() {
     }
   };
 
-  // Struktur Tabel Per Hari sesuai template gambar resmi
   const dayScheduleData = useMemo(() => {
     if (!selectedTeacherId) return [];
 
@@ -228,7 +257,6 @@ function TeacherPrintContent() {
         const slots = [...(day.timeSlots || [])].sort((a, b) => a.periodNumber - b.periodNumber);
         const rows: any[] = [];
 
-        // Khusus Senin: Baris pertama adalah UPACARA BENDERA (07.00 - 08.00)
         if (day.dayNumber === 1) {
           rows.push({
             type: "CEREMONY",
@@ -242,7 +270,6 @@ function TeacherPrintContent() {
           });
         }
 
-        // Petakan slot jam
         let regularTeachingIndex = 1;
         const processedSlots: any[] = [];
 
@@ -254,9 +281,10 @@ function TeacherPrintContent() {
               slot,
               time: `${slot.startTime.replace(":", ".")} - ${slot.endTime.replace(":", ".")}`,
               periodNum: "",
-              label: slot.label.toLowerCase().includes("ishoma") || slot.label.toLowerCase().includes("sholat")
-                ? "Istirahat / sholat"
-                : "Istirahat",
+              label:
+                slot.label.toLowerCase().includes("ishoma") || slot.label.toLowerCase().includes("sholat")
+                  ? "Istirahat / sholat"
+                  : "Istirahat",
             });
           } else {
             const sched = teacherSchedules.find(
@@ -272,7 +300,6 @@ function TeacherPrintContent() {
           }
         }
 
-        // Hitung blok mengajar berurutan untuk merge kolom JTM
         let i = 0;
         while (i < processedSlots.length) {
           const item = processedSlots[i];
@@ -303,7 +330,6 @@ function TeacherPrintContent() {
               });
               i++;
             } else {
-              // Hitung berapa jam berturut-turut mapel & kelas & ruangan yang sama
               let count = 1;
               let j = i + 1;
               while (j < processedSlots.length) {
@@ -321,7 +347,6 @@ function TeacherPrintContent() {
                 }
               }
 
-              // Masukkan baris pertama dengan jtmSpan = count
               rows.push({
                 type: "TEACHING",
                 time: item.time,
@@ -333,7 +358,6 @@ function TeacherPrintContent() {
                 jtmValue: count,
               });
 
-              // Masukkan baris lanjutan dengan jtmSpan = 0 (tidak render <td> JTM)
               for (let k = 1; k < count; k++) {
                 const nextItem = processedSlots[i + k];
                 rows.push({
@@ -359,6 +383,24 @@ function TeacherPrintContent() {
         };
       });
   }, [activeDays, teacherSchedules, selectedTeacherId]);
+
+  // Auto-fit: pastikan seluruh konten lembar cetak selalu muat tepat 1 halaman A4 (<= 1045px pada 96dpi)
+  useEffect(() => {
+    if (loading || !sheetRef.current) return;
+    setAutoZoom(1);
+    const timer = setTimeout(() => {
+      if (!sheetRef.current) return;
+      const naturalHeight = sheetRef.current.scrollHeight;
+      const maxA4HeightPx = 1045; // ~276mm aman dalam area cetak A4 297mm (margin 5mm)
+      if (naturalHeight > maxA4HeightPx) {
+        const computedScale = Math.max(0.65, Number((maxA4HeightPx / naturalHeight).toFixed(3)));
+        setAutoZoom(computedScale);
+      } else {
+        setAutoZoom(1);
+      }
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [loading, selectedTeacherId, dayScheduleData, printConfig]);
 
   if (loading) {
     return (
@@ -392,9 +434,9 @@ function TeacherPrintContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 py-6 px-3 sm:px-6">
+    <div className="min-h-screen bg-slate-100 py-4 px-3 sm:px-6">
       {/* ==================== TOP ACTION BAR (NO PRINT) ==================== */}
-      <div className="max-w-[215mm] mx-auto mb-6 bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex flex-wrap items-center justify-between gap-4 no-print border border-slate-800">
+      <div className="max-w-[210mm] mx-auto mb-4 bg-slate-900 text-white p-3.5 rounded-2xl shadow-xl flex flex-wrap items-center justify-between gap-3 no-print border border-slate-800">
         <div className="flex items-center gap-3">
           <Link
             href="/"
@@ -404,16 +446,15 @@ function TeacherPrintContent() {
             <ArrowLeft className="w-4 h-4" />
           </Link>
           <div>
-            <h1 className="font-bold text-sm sm:text-base leading-tight">
+            <h1 className="font-bold text-sm leading-tight">
               Format Cetak Resmi Jadwal Mengajar Guru
             </h1>
             <p className="text-[11px] text-slate-400">
-              Standar Resmi UPT SMK Negeri 2 Parepare (Format A4 Siap Cetak / PDF)
+              Otomatis Fit 1 Lembar Kertas A4 {autoZoom < 1 ? `(Skala Otomatis ${Math.round(autoZoom * 100)}%)` : "(100% Fit)"}
             </p>
           </div>
         </div>
 
-        {/* Pilihan Guru Navigasi Cepat */}
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center bg-slate-800 rounded-xl p-1 border border-slate-700">
             <button
@@ -430,7 +471,7 @@ function TeacherPrintContent() {
                 setSelectedTeacherId(e.target.value);
                 router.push(`/print/teacher?id=${e.target.value}`);
               }}
-              className="bg-transparent text-white font-semibold text-xs px-2 py-1 outline-none cursor-pointer max-w-[200px] truncate"
+              className="bg-transparent text-white font-semibold text-xs px-2 py-1 outline-none cursor-pointer max-w-[190px] truncate"
             >
               {teachers.map((t) => (
                 <option key={t.id} value={t.id} className="bg-slate-900 text-white">
@@ -448,12 +489,21 @@ function TeacherPrintContent() {
             </button>
           </div>
 
+          <Link
+            href="/roster?tab=print_config"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-semibold transition-colors"
+            title="Atur Kop Surat, Logo, Semester & Tanggal Berlaku"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Atur Kop</span>
+          </Link>
+
           <button
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/30"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/30"
           >
             <Printer className="w-4 h-4" />
-            <span>Cetak / Simpan PDF</span>
+            <span>Cetak / PDF (1 Hal)</span>
           </button>
 
           <button
@@ -462,91 +512,94 @@ function TeacherPrintContent() {
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-600/30"
           >
             <Download className="w-4 h-4" />
-            <span>{downloadingPdf ? "Mempersiapkan..." : "Download File PDF"}</span>
+            <span>{downloadingPdf ? "Menyiapkan..." : "Download PDF"}</span>
           </button>
         </div>
       </div>
 
-      {/* ==================== LEMBAR DOKUMEN CETAK RESMI (A4) ==================== */}
-      <div className="print-sheet max-w-[215mm] mx-auto bg-white p-6 sm:p-8 rounded-none sm:rounded-2xl shadow-xl sm:border border-slate-200 text-black font-sans leading-tight">
-        {/* 1. KOP SURAT RESMI SEKOLAH */}
-        <div className="flex items-center gap-4 pb-2 mb-1.5">
-          <div className="w-20 shrink-0 text-center">
-            {/* Logo Resmi Pemprov Sulsel */}
+      {/* ==================== LEMBAR DOKUMEN CETAK RESMI (1 HALAMAN A4) ==================== */}
+      <div
+        ref={sheetRef}
+        style={{ zoom: autoZoom }}
+        className="print-sheet max-w-[210mm] mx-auto bg-white p-4 sm:p-5 rounded-none sm:rounded-xl shadow-xl sm:border border-slate-200 text-black font-sans leading-tight"
+      >
+        {/* 1. KOP SURAT RESMI SEKOLAH (DINAMIS DARI PENGATURAN ADMIN) */}
+        <div className="flex items-center gap-3 pb-1 mb-1">
+          <div className="w-14 shrink-0 text-center">
             <img
-              src="/logo-sulsel.png"
-              alt="Logo Pemprov Sulsel"
-              className="w-18 h-auto max-h-24 mx-auto object-contain"
+              src={printConfig.logoDataUrl || "/logo-sulsel.png"}
+              alt="Logo Instansi"
+              className="w-13 h-auto max-h-16 mx-auto object-contain"
               onError={(e) => {
-                // Fallback jika file gambar tidak ditemukan
                 (e.target as HTMLElement).style.display = "none";
               }}
             />
           </div>
-          <div className="flex-1 text-center leading-snug">
-            <div className="text-[12pt] sm:text-[13pt] font-black tracking-wide uppercase font-serif">
-              PEMERINTAH PROVINSI SULAWESI SELATAN
+          <div className="flex-1 text-center leading-tight">
+            <div className="text-[10.5pt] font-black tracking-wide uppercase font-serif">
+              {printConfig.govLine}
             </div>
-            <div className="text-[12pt] sm:text-[13pt] font-black tracking-wide uppercase font-serif">
-              DINAS PENDIDIKAN
+            <div className="text-[10.5pt] font-black tracking-wide uppercase font-serif">
+              {printConfig.deptLine}
             </div>
-            <div className="text-[14pt] sm:text-[15pt] font-black tracking-wider uppercase font-serif">
-              UPT SMK NEGERI 2 PAREPARE
+            <div className="text-[12pt] font-black tracking-wider uppercase font-serif">
+              {printConfig.schoolName}
             </div>
-            <div className="text-[8pt] text-slate-800 mt-0.5">
-              Jl. Jend. Ahmad Yani No. 151 ☎ (0421) 21962 - Fax. (0421) 28149 Parepare 91131
-            </div>
-            <div className="text-[8pt] text-slate-800">
-              Email: <span className="underline">smkn2pare2@gmail.com</span> &nbsp;&nbsp;&nbsp; Website: <span className="underline">www.smknegeri2parepare.sch.id</span>
-            </div>
+            {printConfig.addressLine && (
+              <div className="text-[7pt] text-slate-900 mt-0.5">{printConfig.addressLine}</div>
+            )}
+            {printConfig.contactLine && (
+              <div className="text-[7pt] text-slate-900">{printConfig.contactLine}</div>
+            )}
           </div>
         </div>
 
         {/* Garis Ganda Kop Surat */}
-        <div className="border-b-[3px] border-black mb-0.5"></div>
-        <div className="border-b-[1px] border-black mb-4"></div>
+        <div className="border-b-[2.5px] border-black mb-0.5"></div>
+        <div className="border-b-[1px] border-black mb-1.5"></div>
 
         {/* 2. JUDUL DOKUMEN */}
-        <div className="text-center font-black text-[11pt] sm:text-[12pt] uppercase tracking-wider mb-3 text-black">
-          JADWAL PELAKSANAAN PEMBELAJARAN TATAP MUKA DI KELAS
+        <div className="text-center font-black text-[9.5pt] uppercase tracking-wider mb-1.5 text-black">
+          {printConfig.docTitle}
         </div>
 
         {/* 3. IDENTITAS GURU & PERIODE */}
-        <div className="grid grid-cols-2 text-[9pt] font-bold text-black mb-3 pb-1 border-b border-slate-300">
-          <div className="space-y-1">
+        <div className="grid grid-cols-2 text-[7.8pt] font-bold text-black mb-1.5 pb-1 border-b border-slate-300">
+          <div className="space-y-0.5">
             <div className="flex">
-              <span className="w-28 sm:w-32">NAMA GURU</span>
+              <span className="w-24">NAMA GURU</span>
               <span>: &nbsp;{currentTeacher.name}</span>
             </div>
             <div className="flex">
-              <span className="w-28 sm:w-32">NIP / GOL</span>
+              <span className="w-24">NIP / GOL</span>
               <span>: &nbsp;{currentTeacher.nip || "-"}</span>
             </div>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             <div className="flex">
-              <span className="w-28 sm:w-32">SEMESTER / TP</span>
-              <span>: &nbsp;Ganjil / 2026-2027</span>
+              <span className="w-24">SEMESTER / TP</span>
+              <span>: &nbsp;{printConfig.semesterTp}</span>
             </div>
             <div className="flex">
-              <span className="w-28 sm:w-32">BERLAKU</span>
-              <span>: &nbsp;13 Juli 2026</span>
+              <span className="w-24">BERLAKU</span>
+              <span>: &nbsp;{printConfig.effectiveDate}</span>
             </div>
           </div>
         </div>
 
-        {/* 4. TABEL JADWAL SESUAI GAMBAR RESMI */}
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[8pt] sm:text-[8.5pt] border-2 border-black">
+        {/* 4. TABEL JADWAL ULTRA-RAPAT AGAR MUAT 1 LEMBAR A4 */}
+        <div>
+          <table className="w-full border-collapse text-[7pt] border-[1.5px] border-black leading-[1.15]">
             <thead>
-              <tr className="bg-[#fb923c] text-black font-black uppercase text-center border-b-2 border-black">
-                <th className="border border-black py-1.5 px-2 w-28 sm:w-32" colSpan={2}>
+              <tr className="bg-[#fb923c] text-black font-black uppercase text-center border-b-[1.5px] border-black">
+                <th className="border border-black py-[2px] px-1 w-24" colSpan={2}>
                   JAM
                 </th>
-                <th className="border border-black py-1.5 px-2">MATA PELAJARAN</th>
-                <th className="border border-black py-1.5 px-2 w-16 sm:w-20">KELAS</th>
-                <th className="border border-black py-1.5 px-2 w-14 sm:w-16">RUANG</th>
-                <th className="border border-black py-1.5 px-2 w-12 sm:w-14">JTM</th>
+                <th className="border border-black py-[2px] px-1 w-6">No</th>
+                <th className="border border-black py-[2px] px-1.5">MATA PELAJARAN</th>
+                <th className="border border-black py-[2px] px-1 w-16">KELAS</th>
+                <th className="border border-black py-[2px] px-1 w-14">RUANG</th>
+                <th className="border border-black py-[2px] px-1 w-10">JTM</th>
               </tr>
             </thead>
             <tbody>
@@ -568,61 +621,56 @@ function TeacherPrintContent() {
                           : ""
                       }`}
                     >
-                      {/* Kolom Hari Vertikal (Hanya dirender pada baris pertama hari tersebut) */}
                       {isFirstRowOfDay && (
                         <td
                           rowSpan={totalRows}
-                          className="border border-black bg-[#9388a2] text-black font-black text-center align-middle w-7 sm:w-8 text-[9pt] uppercase tracking-widest p-0 select-none"
+                          className="border border-black bg-[#9388a2] text-black font-black text-center align-middle w-6 text-[7.5pt] uppercase tracking-wider p-0 select-none"
                           style={{
                             writingMode: "vertical-rl",
                             transform: "rotate(180deg)",
                           }}
                         >
-                          {day.dayName.split("").join(" ")}
+                          {day.dayName.toUpperCase()}
                         </td>
                       )}
 
-                      {/* Kolom Rentang Waktu (Jam) */}
-                      <td className="border border-black py-1 px-1.5 text-center font-medium whitespace-nowrap text-[8pt] w-24">
+                      <td className="border border-black py-[1.5px] px-1 text-center font-medium whitespace-nowrap text-[6.8pt] w-20">
                         {row.time}
                       </td>
 
-                      {/* Kolom Nomor Jam Ke- (Kosong jika Upacara atau Istirahat) */}
-                      <td className="border border-black py-1 px-1 text-center font-bold w-7">
+                      <td className="border border-black py-[1.5px] px-0.5 text-center font-bold w-6">
                         {row.periodNum || ""}
                       </td>
 
-                      {/* Kolom Mata Pelajaran (Colspan jika Upacara atau Istirahat) */}
                       {row.type === "CEREMONY" ? (
                         <td
                           colSpan={4}
-                          className="border border-black py-1 px-2 text-center font-black tracking-wider uppercase text-black"
+                          className="border border-black py-[1.5px] px-1.5 text-center font-black tracking-wider uppercase text-black"
                         >
                           {row.subjectName}
                         </td>
                       ) : row.type === "BREAK" ? (
                         <td
                           colSpan={4}
-                          className="border border-black py-1 px-2 text-center font-black tracking-wider text-red-600"
+                          className="border border-black py-[1.5px] px-1.5 text-center font-black tracking-wider text-red-600"
                         >
                           {row.subjectName}
                         </td>
                       ) : (
                         <>
-                          <td className="border border-black py-1 px-2 font-bold uppercase truncate max-w-[220px]">
+                          <td className="border border-black py-[1.5px] px-1.5 font-bold uppercase truncate max-w-[240px]">
                             {row.subjectName}
                           </td>
-                          <td className="border border-black py-1 px-1 text-center font-bold uppercase">
+                          <td className="border border-black py-[1.5px] px-1 text-center font-bold uppercase">
                             {row.className}
                           </td>
-                          <td className="border border-black py-1 px-1 text-center font-bold uppercase">
+                          <td className="border border-black py-[1.5px] px-1 text-center font-bold uppercase">
                             {row.roomName}
                           </td>
-                          {/* Kolom JTM (Di-merge vertikal jika mengajar beberapa jam berurutan) */}
                           {row.jtmSpan > 0 && (
                             <td
                               rowSpan={row.jtmSpan}
-                              className="border border-black py-1 px-1 text-center font-black text-[9pt] align-middle bg-slate-50/50"
+                              className="border border-black py-[1.5px] px-1 text-center font-black text-[7.5pt] align-middle bg-slate-50/50"
                             >
                               {row.jtmValue}
                             </td>
@@ -637,97 +685,57 @@ function TeacherPrintContent() {
           </table>
         </div>
 
-        {/* 5. KOTAK REKAPITULASI TUGAS TAMBAHAN & TOTAL BEBAN KERJA */}
-        <div className="mt-4 p-3.5 border-2 border-black rounded-lg bg-slate-50/80 space-y-2 text-[8.5pt]">
-          <div className="font-black uppercase tracking-wider text-black border-b border-slate-300 pb-1 flex items-center justify-between">
-            <span>REKAPITULASI BEBAN KERJA &amp; TUGAS TAMBAHAN GURU</span>
-            <span className="text-[7.5pt] font-semibold text-slate-600">
-              Permendikdasmen No. 11 Tahun 2025
+        {/* 5. REKAPITULASI TUGAS TAMBAHAN & BEBAN KERJA RINGKAS (1 BARIS PADAT) */}
+        <div className="mt-1.5 px-2.5 py-1.5 border-[1.5px] border-black rounded bg-slate-50/80 text-[7pt] text-black flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            <span>
+              <strong>Tatap Muka:</strong> {auditSummary.teachingHours} JP
+            </span>
+            <span>|</span>
+            <span>
+              <strong>Tugas Tambahan:</strong>{" "}
+              {teacherDuties.length === 0
+                ? "Tidak ada"
+                : teacherDuties
+                    .map(
+                      (d) =>
+                        `${d.name} (+${d.equivalentHours} JP${d.nomorSk ? `, SK: ${d.nomorSk}` : ""})`
+                    )
+                    .join("; ")}
             </span>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-black">
-            {/* Box 1: Beban Tatap Muka */}
-            <div className="p-2.5 bg-white border border-slate-300 rounded">
-              <div className="text-[7.5pt] text-slate-500 font-bold uppercase">Beban Tatap Muka (KBM)</div>
-              <div className="text-[12pt] font-black text-blue-900 mt-0.5">
-                {auditSummary.teachingHours}{" "}
-                <span className="text-[8pt] font-normal text-slate-500">JP / Minggu</span>
-              </div>
-              <div className="text-[7.5pt] text-slate-600 mt-1">
-                Syarat Minimal Tatap Muka: <strong>{auditSummary.minTeaching} JP</strong>{" "}
-                {auditSummary.isMinTeachingMet ? "(✓ Terpenuhi)" : "(✗ Belum)"}
-              </div>
-            </div>
-
-            {/* Box 2: Rincian Tugas Tambahan */}
-            <div className="p-2.5 bg-white border border-slate-300 rounded md:col-span-1">
-              <div className="text-[7.5pt] text-slate-500 font-bold uppercase">Tugas Tambahan Diampu</div>
-              {teacherDuties.length === 0 ? (
-                <div className="text-[8pt] text-slate-400 italic mt-1">Tidak ada tugas tambahan</div>
-              ) : (
-                <div className="space-y-1 mt-1">
-                  {teacherDuties.map((d) => (
-                    <div key={d.id} className="text-[8pt] leading-tight">
-                      <span className="font-bold">
-                        {d.category === "TTU" ? "🔵" : "🟢"} {d.name}
-                      </span>{" "}
-                      <span className="font-semibold text-amber-900">(+{d.equivalentHours} JP)</span>
-                      {d.nomorSk && (
-                        <div className="text-[7pt] text-slate-500 font-mono">SK: {d.nomorSk}</div>
-                      )}
-                    </div>
-                  ))}
-                  <div className="text-[7.5pt] text-slate-600 pt-1 border-t border-slate-200">
-                    Ekuivalensi Diakui TPG: <strong>+{auditSummary.recognizedDutyHours} JP</strong>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Box 3: Total Beban Kerja & Status Kelayakan TPG */}
-            <div className="p-2.5 bg-white border border-slate-300 rounded">
-              <div className="text-[7.5pt] text-slate-500 font-bold uppercase">Status Kelayakan Sertifikasi</div>
-              <div className="text-[12pt] font-black text-slate-900 mt-0.5">
-                {auditSummary.totalRecognized}{" "}
-                <span className="text-[8pt] font-normal text-slate-500">/ 24 JP Diakui</span>
-              </div>
-              <div className="mt-1">
-                {auditSummary.isValidTPG ? (
-                  <span className="inline-block px-2 py-0.5 rounded text-[7.5pt] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
-                    🟢 MEMENUHI SYARAT TPG (≥ 24 JP)
-                  </span>
-                ) : !auditSummary.isMinTeachingMet ? (
-                  <span className="inline-block px-2 py-0.5 rounded text-[7.5pt] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                    🟡 KURANG TATAP MUKA ({auditSummary.teachingHours}/{auditSummary.minTeaching} JP)
-                  </span>
-                ) : (
-                  <span className="inline-block px-2 py-0.5 rounded text-[7.5pt] font-bold bg-red-100 text-red-900 border border-red-300">
-                    🔴 KURANG JAM TOTAL ({auditSummary.totalRecognized}/24 JP)
-                  </span>
-                )}
-              </div>
-              <div className="text-[7.5pt] text-slate-500 mt-1">
-                Total Beban Riil Sekolah: <strong>{auditSummary.totalReal} JP</strong>
-              </div>
-            </div>
+          <div className="flex items-center gap-2 font-bold">
+            <span>
+              Total Diakui: {auditSummary.totalRecognized}/24 JP
+            </span>
+            {auditSummary.isValidTPG ? (
+              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-300">
+                🟢 VALID TPG
+              </span>
+            ) : !auditSummary.isMinTeachingMet ? (
+              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                🟡 KURANG TM
+              </span>
+            ) : (
+              <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-900 border border-red-300">
+                🔴 KURANG JP
+              </span>
+            )}
           </div>
-        </div>
-
-        {/* Catatan Dokumen Resmi */}
-        <div className="mt-3 text-[7.5pt] text-slate-500 text-right italic">
-          Dicetak secara otomatis melalui Sistem Penjadwalan &amp; Audit Beban Kerja UPT SMK Negeri 2 Parepare
         </div>
       </div>
 
-      {/* ==================== PRINT MEDIA STYLES ==================== */}
+      {/* ==================== PRINT MEDIA STYLES (STRICT 1 PAGE A4) ==================== */}
       <style jsx global>{`
         @media print {
+          html,
           body {
             background: white !important;
             color: black !important;
             padding: 0 !important;
             margin: 0 !important;
+            height: 100% !important;
+            overflow: hidden !important;
           }
           .no-print {
             display: none !important;
@@ -739,10 +747,12 @@ function TeacherPrintContent() {
             padding: 0 !important;
             box-shadow: none !important;
             border: none !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
           }
           @page {
             size: A4 portrait;
-            margin: 10mm 10mm 10mm 10mm;
+            margin: 5mm 7mm 5mm 7mm;
           }
           * {
             -webkit-print-color-adjust: exact !important;

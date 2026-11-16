@@ -176,3 +176,19 @@ model AdditionalDuty {
   @@index([teacherId])
 }
 
+// Pengaturan Kop Surat & Dokumen Cetak Resmi Sekolah
+model SchoolPrintConfig {
+  id            String   @id @default("default")
+  logoDataUrl   String?  // Base64 data URL gambar logo (null = logo default /logo-sulsel.png)
+  govLine       String   @default("PEMERINTAH PROVINSI SULAWESI SELATAN")
+  deptLine      String   @default("DINAS PENDIDIKAN")
+  schoolName    String   @default("UPT SMK NEGERI 2 PAREPARE")
+  addressLine   String   @default("Jl. Jend. Ahmad Yani No. 151 ☎ (0421) 21962 - Fax. (0421) 28149 Parepare 91131")
+  contactLine   String   @default("Email: smkn2pare2@gmail.com     Website: www.smknegeri2parepare.sch.id")
+  docTitle      String   @default("JADWAL PELAKSANAAN PEMBELAJARAN TATAP MUKA DI KELAS")
+  semesterTp    String   @default("Ganjil / 2026-2027")
+  effectiveDate String   @default("13 Juli 2026")
+  updatedAt     DateTime @updatedAt
+}
+
+

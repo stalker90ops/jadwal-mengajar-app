@@ -46,6 +46,7 @@ type TabKey =
   | "subjects"
   | "rooms_classes"
   | "days"
+  | "print_config"
   | "assignments"
   | "additional_duties";
 
@@ -234,6 +235,29 @@ export default function AdminScheduleDashboard() {
     notes: "",
   });
   const [dutySearch, setDutySearch] = useState<string>("");
+
+  // Form Pengaturan Kop Surat & Cetak Resmi Sekolah
+  const [printConfigForm, setPrintConfigForm] = useState<{
+    logoDataUrl: string | null;
+    govLine: string;
+    deptLine: string;
+    schoolName: string;
+    addressLine: string;
+    contactLine: string;
+    docTitle: string;
+    semesterTp: string;
+    effectiveDate: string;
+  }>({
+    logoDataUrl: null,
+    govLine: "PEMERINTAH PROVINSI SULAWESI SELATAN",
+    deptLine: "DINAS PENDIDIKAN",
+    schoolName: "UPT SMK NEGERI 2 PAREPARE",
+    addressLine: "Jl. Jend. Ahmad Yani No. 151 ☎ (0421) 21962 - Fax. (0421) 28149 Parepare 91131",
+    contactLine: "Email: smkn2pare2@gmail.com     Website: www.smknegeri2parepare.sch.id",
+    docTitle: "JADWAL PELAKSANAAN PEMBELAJARAN TATAP MUKA DI KELAS",
+    semesterTp: "Ganjil / 2026-2027",
+    effectiveDate: "13 Juli 2026",
+  });
 
   // Modal Progress Operasi Interaktif (Auto-Generate, Import CSV, Terapkan Kurikulum)
   const [progressModal, setProgressModal] = useState<{
@@ -646,6 +670,19 @@ export default function AdminScheduleDashboard() {
         setCurriculumStandards(data.curriculumStandards || []);
         setAdditionalDuties(data.additionalDuties || []);
         setAudit(data.audit || { conflicts: [], conflictingScheduleIds: [] });
+        if (data.printConfig) {
+          setPrintConfigForm({
+            logoDataUrl: data.printConfig.logoDataUrl || null,
+            govLine: data.printConfig.govLine || "PEMERINTAH PROVINSI SULAWESI SELATAN",
+            deptLine: data.printConfig.deptLine || "DINAS PENDIDIKAN",
+            schoolName: data.printConfig.schoolName || "UPT SMK NEGERI 2 PAREPARE",
+            addressLine: data.printConfig.addressLine || "",
+            contactLine: data.printConfig.contactLine || "",
+            docTitle: data.printConfig.docTitle || "JADWAL PELAKSANAAN PEMBELAJARAN TATAP MUKA DI KELAS",
+            semesterTp: data.printConfig.semesterTp || "Ganjil / 2026-2027",
+            effectiveDate: data.printConfig.effectiveDate || "13 Juli 2026",
+          });
+        }
 
         if (!gridFilterId && data.classes?.length > 0) {
           setGridFilterId(data.classes[0].id);
@@ -1546,6 +1583,81 @@ export default function AdminScheduleDashboard() {
     }
   };
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "print_config") {
+        setMainTab("referensi");
+        setActiveTab("print_config");
+      }
+    }
+  }, []);
+
+  const handleLogoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showMessage("error", "Harap pilih file gambar (PNG, JPG, atau WebP).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxSize = 240;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxSize || h > maxSize) {
+          if (w > h) {
+            h = Math.round((h * maxSize) / w);
+            w = maxSize;
+          } else {
+            w = Math.round((w * maxSize) / h);
+            h = maxSize;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const dataUrl = canvas.toDataURL("image/png");
+          setPrintConfigForm((prev) => ({ ...prev, logoDataUrl: dataUrl }));
+          showMessage("success", "Logo berhasil dimuat. Jangan lupa klik 'Simpan Pengaturan Kop & Cetak'.");
+        }
+      };
+      img.src = ev.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSavePrintConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusyAction(true);
+    try {
+      const res = await fetch("/api/master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entity: "print_config",
+          action: "update",
+          data: printConfigForm,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showMessage("success", data.message || "Pengaturan Kop Surat & Cetak berhasil disimpan!");
+        await loadAllData();
+      } else {
+        showMessage("error", data.error || "Gagal menyimpan pengaturan kop surat.");
+      }
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
   const handleClearAllDuties = async () => {
     if (
       !confirm(
@@ -2375,7 +2487,7 @@ export default function AdminScheduleDashboard() {
             type="button"
             onClick={() => {
               setMainTab("referensi");
-              if (!["teachers", "subjects", "rooms_classes", "days"].includes(activeTab)) {
+              if (!["teachers", "subjects", "rooms_classes", "days", "print_config"].includes(activeTab)) {
                 setActiveTab("teachers");
               }
             }}
@@ -2453,6 +2565,7 @@ export default function AdminScheduleDashboard() {
                 { key: "subjects", label: "Daftar Mata Pelajaran", icon: BookOpen },
                 { key: "rooms_classes", label: "Ruangan dan Kelas", icon: DoorOpen },
                 { key: "days", label: "Hari Keaktifan & Jam Sekolah", icon: Clock },
+                { key: "print_config", label: "Kop Surat & Cetak", icon: Printer },
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.key;
@@ -4341,6 +4454,273 @@ export default function AdminScheduleDashboard() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== TAB 5B: PENGATURAN KOP SURAT & CETAK RESMI ==================== */}
+      {activeTab === "print_config" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Form Pengaturan Kop Surat */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-indigo-600" />
+                  <span>Pengaturan Kop Surat &amp; Cetak Resmi (A4)</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Perubahan yang disimpan berlaku untuk seluruh lembar cetak jadwal guru (Browser Print &amp; PDF).
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSavePrintConfig} className="space-y-4 text-xs">
+              {/* Upload Logo */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                <label className="block font-bold text-slate-800">
+                  Logo Instansi / Provinsi / Sekolah
+                </label>
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 bg-white border border-slate-300 rounded-xl flex items-center justify-center p-1 shrink-0 overflow-hidden">
+                    <img
+                      src={printConfigForm.logoDataUrl || "/logo-sulsel.png"}
+                      alt="Preview Logo"
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  </div>
+                  <div className="space-y-2 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold cursor-pointer transition-colors">
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Upload Logo Baru (PNG/JPG)</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={handleLogoFileChange}
+                          className="hidden"
+                        />
+                      </label>
+                      {printConfigForm.logoDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPrintConfigForm((prev) => ({ ...prev, logoDataUrl: null }))
+                          }
+                          className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-semibold transition-colors"
+                        >
+                          Reset Logo Default
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      Disarankan gambar berlatar transparan (PNG). Otomatis disesuaikan ukurannya agar muat rapi di kop surat.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Baris 1 (Pemerintah / Yayasan) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={printConfigForm.govLine}
+                    onChange={(e) =>
+                      setPrintConfigForm({ ...printConfigForm, govLine: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Baris 2 (Dinas / Instansi) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={printConfigForm.deptLine}
+                    onChange={(e) =>
+                      setPrintConfigForm({ ...printConfigForm, deptLine: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Baris 3 (Nama Satuan Pendidikan / Sekolah) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={printConfigForm.schoolName}
+                  onChange={(e) =>
+                    setPrintConfigForm({ ...printConfigForm, schoolName: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Baris 4 (Alamat, Telepon, Fax, Kode Pos)
+                </label>
+                <input
+                  type="text"
+                  value={printConfigForm.addressLine}
+                  onChange={(e) =>
+                    setPrintConfigForm({ ...printConfigForm, addressLine: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Baris 5 (Email &amp; Website)
+                </label>
+                <input
+                  type="text"
+                  value={printConfigForm.contactLine}
+                  onChange={(e) =>
+                    setPrintConfigForm({ ...printConfigForm, contactLine: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                />
+              </div>
+
+              <div className="border-t border-slate-200 pt-3 space-y-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Judul Dokumen Cetak *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={printConfigForm.docTitle}
+                    onChange={(e) =>
+                      setPrintConfigForm({ ...printConfigForm, docTitle: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-bold uppercase"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Semester / Tahun Pelajaran *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="cth: Ganjil / 2026-2027"
+                      value={printConfigForm.semesterTp}
+                      onChange={(e) =>
+                        setPrintConfigForm({ ...printConfigForm, semesterTp: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Tanggal Berlaku *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="cth: 13 Juli 2026"
+                      value={printConfigForm.effectiveDate}
+                      onChange={(e) =>
+                        setPrintConfigForm({ ...printConfigForm, effectiveDate: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={busyAction}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-sm"
+                >
+                  {busyAction ? "Menyimpan..." : "Simpan Pengaturan Kop & Cetak"}
+                </button>
+                <a
+                  href="/print/teacher"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold transition-all"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Buka Pratinjau A4</span>
+                </a>
+              </div>
+            </form>
+          </div>
+
+          {/* Live Preview Kop Surat & Identitas */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 h-fit">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h4 className="font-bold text-slate-900 text-sm">
+                Pratinjau Kop Surat &amp; Identitas Cetak
+              </h4>
+              <span className="text-[11px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-semibold">
+                Format Fit 1 Lembar A4
+              </span>
+            </div>
+
+            <div className="p-5 border-2 border-slate-300 rounded-xl bg-white text-black shadow-inner">
+              <div className="flex items-center gap-3 pb-1.5">
+                <div className="w-14 shrink-0 text-center">
+                  <img
+                    src={printConfigForm.logoDataUrl || "/logo-sulsel.png"}
+                    alt="Logo"
+                    className="w-14 h-auto max-h-16 mx-auto object-contain"
+                  />
+                </div>
+                <div className="flex-1 text-center leading-tight">
+                  <div className="text-[10pt] font-black uppercase font-serif">
+                    {printConfigForm.govLine}
+                  </div>
+                  <div className="text-[10pt] font-black uppercase font-serif">
+                    {printConfigForm.deptLine}
+                  </div>
+                  <div className="text-[11.5pt] font-black uppercase font-serif">
+                    {printConfigForm.schoolName}
+                  </div>
+                  <div className="text-[7pt] text-slate-800 mt-0.5">
+                    {printConfigForm.addressLine}
+                  </div>
+                  <div className="text-[7pt] text-slate-800">
+                    {printConfigForm.contactLine}
+                  </div>
+                </div>
+              </div>
+              <div className="border-b-[2.5px] border-black mb-0.5"></div>
+              <div className="border-b-[1px] border-black mb-3"></div>
+
+              <div className="text-center font-black text-[9.5pt] uppercase tracking-wide mb-3">
+                {printConfigForm.docTitle}
+              </div>
+
+              <div className="grid grid-cols-2 text-[8pt] font-bold gap-y-1 border-b border-slate-300 pb-2">
+                <div>NAMA GURU : {teachers[0]?.name || "ANDI HIDAYAT MARSEDA ASNUR"}</div>
+                <div>SEMESTER / TP : {printConfigForm.semesterTp}</div>
+                <div>NIP / GOL : {teachers[0]?.nip || "199203252022211021"}</div>
+                <div>BERLAKU : {printConfigForm.effectiveDate}</div>
+              </div>
+
+              <div className="mt-3 p-3 bg-slate-50 border border-dashed border-slate-300 rounded text-center text-[11px] text-slate-500">
+                Tabel Jadwal Mengajar (Senin s/d Jumat/Sabtu) &amp; Rekapitulasi Beban Kerja otomatis diskalakan rapat agar muat dalam <strong>1 halaman kertas A4</strong>.
+              </div>
+            </div>
           </div>
         </div>
       )}
