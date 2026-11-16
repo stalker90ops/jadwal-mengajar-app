@@ -257,19 +257,6 @@ function TeacherPrintContent() {
         const slots = [...(day.timeSlots || [])].sort((a, b) => a.periodNumber - b.periodNumber);
         const rows: any[] = [];
 
-        if (day.dayNumber === 1) {
-          rows.push({
-            type: "CEREMONY",
-            time: "07.00 - 08.00",
-            periodNum: "",
-            subjectName: "UPACARA BENDERA",
-            className: "",
-            roomName: "",
-            jtmSpan: 1,
-            jtmValue: "",
-          });
-        }
-
         let regularTeachingIndex = 1;
         const processedSlots: any[] = [];
 
@@ -300,9 +287,47 @@ function TeacherPrintContent() {
           }
         }
 
+        // Cari index slot mengajar pertama dan terakhir pada hari ini
+        const teachingIndices = processedSlots
+          .map((item, idx) => (item.type === "TEACHING" && item.sched ? idx : -1))
+          .filter((idx) => idx !== -1);
+
+        // Jika guru tidak mengajar sama sekali pada hari ini, sembunyikan hari ini
+        if (teachingIndices.length === 0) {
+          return { day, rows: [] };
+        }
+
+        const firstTeachIdx = teachingIndices[0];
+        const lastTeachIdx = teachingIndices[teachingIndices.length - 1];
+
+        // Khusus Senin: tampilkan Upacara Bendera jika guru aktif mengajar pada hari Senin
+        if (day.dayNumber === 1) {
+          rows.push({
+            type: "CEREMONY",
+            time: "07.00 - 08.00",
+            periodNum: "",
+            subjectName: "UPACARA BENDERA",
+            className: "",
+            roomName: "",
+            jtmSpan: 1,
+            jtmValue: "",
+          });
+        }
+
+        // Filter hanya slot yang ada jadwal mengajarnya, serta istirahat di antara jam mengajar
+        const activeSlotsOnly = processedSlots.filter((item, idx) => {
+          if (item.type === "TEACHING") {
+            return Boolean(item.sched);
+          }
+          if (item.type === "BREAK") {
+            return idx > firstTeachIdx && idx < lastTeachIdx;
+          }
+          return false;
+        });
+
         let i = 0;
-        while (i < processedSlots.length) {
-          const item = processedSlots[i];
+        while (i < activeSlotsOnly.length) {
+          const item = activeSlotsOnly[i];
           if (item.type === "BREAK") {
             rows.push({
               type: "BREAK",
@@ -317,63 +342,54 @@ function TeacherPrintContent() {
             i++;
           } else {
             const currentSched = item.sched;
-            if (!currentSched) {
-              rows.push({
-                type: "TEACHING",
-                time: item.time,
-                periodNum: item.periodNum,
-                subjectName: "",
-                className: "",
-                roomName: "",
-                jtmSpan: 1,
-                jtmValue: "",
-              });
-              i++;
-            } else {
-              let count = 1;
-              let j = i + 1;
-              while (j < processedSlots.length) {
-                const nextItem = processedSlots[j];
-                if (nextItem.type !== "TEACHING" || !nextItem.sched) break;
-                if (
-                  nextItem.sched.subjectId === currentSched.subjectId &&
-                  nextItem.sched.classGroupId === currentSched.classGroupId &&
-                  nextItem.sched.roomId === currentSched.roomId
-                ) {
-                  count++;
-                  j++;
-                } else {
-                  break;
-                }
+            let count = 1;
+            let j = i + 1;
+            while (j < activeSlotsOnly.length) {
+              const nextItem = activeSlotsOnly[j];
+              if (nextItem.type !== "TEACHING" || !nextItem.sched) break;
+              if (
+                nextItem.sched.subjectId === currentSched.subjectId &&
+                nextItem.sched.classGroupId === currentSched.classGroupId &&
+                nextItem.sched.roomId === currentSched.roomId
+              ) {
+                count++;
+                j++;
+              } else {
+                break;
               }
+            }
 
+            const roomDisplay =
+              currentSched.room?.code?.toUpperCase() ||
+              currentSched.room?.name?.toUpperCase() ||
+              "";
+
+            rows.push({
+              type: "TEACHING",
+              time: item.time,
+              periodNum: item.periodNum,
+              subjectName: currentSched.subject?.name?.toUpperCase() || "",
+              className: currentSched.classGroup?.name?.toUpperCase() || "",
+              roomName: roomDisplay,
+              jtmSpan: count,
+              jtmValue: count,
+            });
+
+            for (let k = 1; k < count; k++) {
+              const nextItem = activeSlotsOnly[i + k];
               rows.push({
                 type: "TEACHING",
-                time: item.time,
-                periodNum: item.periodNum,
+                time: nextItem.time,
+                periodNum: nextItem.periodNum,
                 subjectName: currentSched.subject?.name?.toUpperCase() || "",
                 className: currentSched.classGroup?.name?.toUpperCase() || "",
-                roomName: currentSched.room?.name?.toUpperCase() || currentSched.room?.code?.toUpperCase() || "",
-                jtmSpan: count,
-                jtmValue: count,
+                roomName: roomDisplay,
+                jtmSpan: 0,
+                jtmValue: "",
               });
-
-              for (let k = 1; k < count; k++) {
-                const nextItem = processedSlots[i + k];
-                rows.push({
-                  type: "TEACHING",
-                  time: nextItem.time,
-                  periodNum: nextItem.periodNum,
-                  subjectName: currentSched.subject?.name?.toUpperCase() || "",
-                  className: currentSched.classGroup?.name?.toUpperCase() || "",
-                  roomName: currentSched.room?.name?.toUpperCase() || currentSched.room?.code?.toUpperCase() || "",
-                  jtmSpan: 0,
-                  jtmValue: "",
-                });
-              }
-
-              i += count;
             }
+
+            i += count;
           }
         }
 
@@ -381,7 +397,8 @@ function TeacherPrintContent() {
           day,
           rows,
         };
-      });
+      })
+      .filter((d) => d.rows.length > 0);
   }, [activeDays, teacherSchedules, selectedTeacherId]);
 
   // Auto-fit: pastikan seluruh konten lembar cetak selalu muat tepat 1 halaman A4 (<= 1045px pada 96dpi)
@@ -520,174 +537,186 @@ function TeacherPrintContent() {
       {/* ==================== LEMBAR DOKUMEN CETAK RESMI (1 HALAMAN A4) ==================== */}
       <div
         ref={sheetRef}
-        style={{ zoom: autoZoom }}
-        className="print-sheet max-w-[210mm] mx-auto bg-white p-4 sm:p-5 rounded-none sm:rounded-xl shadow-xl sm:border border-slate-200 text-black font-sans leading-tight"
+        style={{
+          zoom: autoZoom,
+          fontFamily: '"Times New Roman", Times, serif',
+          lineHeight: 1.05,
+        }}
+        className="print-sheet max-w-[210mm] mx-auto bg-white p-5 sm:p-6 rounded-none sm:rounded-xl shadow-xl sm:border border-slate-200 text-black"
       >
         {/* 1. KOP SURAT RESMI SEKOLAH (DINAMIS DARI PENGATURAN ADMIN) */}
-        <div className="flex items-center gap-3 pb-1 mb-1">
-          <div className="w-14 shrink-0 text-center">
+        <div className="flex items-center gap-3 pb-1 mb-0">
+          <div className="w-16 shrink-0 text-center">
             <img
               src={printConfig.logoDataUrl || "/logo-sulsel.png"}
               alt="Logo Instansi"
-              className="w-13 h-auto max-h-16 mx-auto object-contain"
+              className="w-15 h-auto max-h-20 mx-auto object-contain"
               onError={(e) => {
                 (e.target as HTMLElement).style.display = "none";
               }}
             />
           </div>
-          <div className="flex-1 text-center leading-tight">
-            <div className="text-[10.5pt] font-black tracking-wide uppercase font-serif">
+          <div className="flex-1 text-center leading-none space-y-0.5">
+            <div className="text-[12pt] font-bold tracking-wide uppercase">
               {printConfig.govLine}
             </div>
-            <div className="text-[10.5pt] font-black tracking-wide uppercase font-serif">
+            <div className="text-[12pt] font-bold tracking-wide uppercase">
               {printConfig.deptLine}
             </div>
-            <div className="text-[12pt] font-black tracking-wider uppercase font-serif">
+            <div className="text-[14pt] font-black tracking-wider uppercase">
               {printConfig.schoolName}
             </div>
             {printConfig.addressLine && (
-              <div className="text-[7pt] text-slate-900 mt-0.5">{printConfig.addressLine}</div>
+              <div className="text-[8.5pt] text-black m-0">{printConfig.addressLine}</div>
             )}
             {printConfig.contactLine && (
-              <div className="text-[7pt] text-slate-900">{printConfig.contactLine}</div>
+              <div className="text-[8.5pt] text-black m-0">{printConfig.contactLine}</div>
             )}
           </div>
         </div>
 
         {/* Garis Ganda Kop Surat */}
-        <div className="border-b-[2.5px] border-black mb-0.5"></div>
-        <div className="border-b-[1px] border-black mb-1.5"></div>
+        <div className="border-b-[2.5px] border-black mb-[1px]"></div>
+        <div className="border-b-[1px] border-black mb-2"></div>
 
         {/* 2. JUDUL DOKUMEN */}
-        <div className="text-center font-black text-[9.5pt] uppercase tracking-wider mb-1.5 text-black">
+        <div className="text-center font-bold text-[11pt] uppercase tracking-wide mb-2 text-black leading-none">
           {printConfig.docTitle}
         </div>
 
-        {/* 3. IDENTITAS GURU & PERIODE */}
-        <div className="grid grid-cols-2 text-[7.8pt] font-bold text-black mb-1.5 pb-1 border-b border-slate-300">
-          <div className="space-y-0.5">
-            <div className="flex">
-              <span className="w-24">NAMA GURU</span>
+        {/* 3. IDENTITAS GURU & PERIODE (SPASI 1, TANPA AFTER/BEFORE) */}
+        <div className="grid grid-cols-2 text-[9.5pt] font-bold text-black mb-2 leading-[1.1]">
+          <div>
+            <div className="flex m-0 p-0">
+              <span className="w-28 shrink-0">NAMA GURU</span>
               <span>: &nbsp;{currentTeacher.name}</span>
             </div>
-            <div className="flex">
-              <span className="w-24">NIP / GOL</span>
+            <div className="flex m-0 p-0">
+              <span className="w-28 shrink-0">NIP / GOL</span>
               <span>: &nbsp;{currentTeacher.nip || "-"}</span>
             </div>
           </div>
-          <div className="space-y-0.5">
-            <div className="flex">
-              <span className="w-24">SEMESTER / TP</span>
+          <div>
+            <div className="flex m-0 p-0">
+              <span className="w-28 shrink-0">SEMESTER / TP</span>
               <span>: &nbsp;{printConfig.semesterTp}</span>
             </div>
-            <div className="flex">
-              <span className="w-24">BERLAKU</span>
+            <div className="flex m-0 p-0">
+              <span className="w-28 shrink-0">BERLAKU</span>
               <span>: &nbsp;{printConfig.effectiveDate}</span>
             </div>
           </div>
         </div>
 
-        {/* 4. TABEL JADWAL ULTRA-RAPAT AGAR MUAT 1 LEMBAR A4 */}
+        {/* 4. TABEL JADWAL (HANYA BARIS MENGAJAR AKTIF, TIMES NEW ROMAN, SPASI 1) */}
         <div>
-          <table className="w-full border-collapse text-[7pt] border-[1.5px] border-black leading-[1.15]">
+          <table className="w-full border-collapse text-[9.5pt] border-[1.5px] border-black leading-none">
             <thead>
-              <tr className="bg-[#fb923c] text-black font-black uppercase text-center border-b-[1.5px] border-black">
-                <th className="border border-black py-[2px] px-1 w-24" colSpan={2}>
+              <tr className="bg-[#fb923c] text-black font-bold uppercase text-center border-b-[1.5px] border-black">
+                <th className="border border-black py-1 px-1.5" colSpan={2}>
                   JAM
                 </th>
-                <th className="border border-black py-[2px] px-1 w-6">No</th>
-                <th className="border border-black py-[2px] px-1.5">MATA PELAJARAN</th>
-                <th className="border border-black py-[2px] px-1 w-16">KELAS</th>
-                <th className="border border-black py-[2px] px-1 w-14">RUANG</th>
-                <th className="border border-black py-[2px] px-1 w-10">JTM</th>
+                <th className="border border-black py-1 px-1 w-7">No</th>
+                <th className="border border-black py-1 px-2">MATA PELAJARAN</th>
+                <th className="border border-black py-1 px-2 whitespace-nowrap">KELAS</th>
+                <th className="border border-black py-1 px-2 whitespace-nowrap">RUANG</th>
+                <th className="border border-black py-1 px-1.5 w-11">JTM</th>
               </tr>
             </thead>
             <tbody>
-              {dayScheduleData.map(({ day, rows }) => {
-                if (rows.length === 0) return null;
-                const totalRows = rows.length;
+              {dayScheduleData.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="border border-black py-6 text-center text-[10pt] italic text-slate-600">
+                    Belum ada jadwal mengajar tatap muka yang terjadwal untuk guru ini.
+                  </td>
+                </tr>
+              ) : (
+                dayScheduleData.map(({ day, rows }) => {
+                  if (rows.length === 0) return null;
+                  const totalRows = rows.length;
 
-                return rows.map((row: any, rIdx: number) => {
-                  const isFirstRowOfDay = rIdx === 0;
+                  return rows.map((row: any, rIdx: number) => {
+                    const isFirstRowOfDay = rIdx === 0;
 
-                  return (
-                    <tr
-                      key={`${day.id}-${rIdx}`}
-                      className={`border-b border-black ${
-                        row.type === "CEREMONY"
-                          ? "bg-[#fef08a] font-bold"
-                          : row.type === "BREAK"
-                          ? "bg-[#bae6fd]"
-                          : ""
-                      }`}
-                    >
-                      {isFirstRowOfDay && (
-                        <td
-                          rowSpan={totalRows}
-                          className="border border-black bg-[#9388a2] text-black font-black text-center align-middle w-6 text-[7.5pt] uppercase tracking-wider p-0 select-none"
-                          style={{
-                            writingMode: "vertical-rl",
-                            transform: "rotate(180deg)",
-                          }}
-                        >
-                          {day.dayName.toUpperCase()}
+                    return (
+                      <tr
+                        key={`${day.id}-${rIdx}`}
+                        className={`border-b border-black ${
+                          row.type === "CEREMONY"
+                            ? "bg-[#fef08a] font-bold"
+                            : row.type === "BREAK"
+                            ? "bg-[#bae6fd]"
+                            : ""
+                        }`}
+                      >
+                        {isFirstRowOfDay && (
+                          <td
+                            rowSpan={totalRows}
+                            className="border border-black bg-[#9388a2] text-black font-bold text-center align-middle w-7 text-[9pt] uppercase tracking-wider p-0 select-none"
+                            style={{
+                              writingMode: "vertical-rl",
+                              transform: "rotate(180deg)",
+                            }}
+                          >
+                            {day.dayName.toUpperCase()}
+                          </td>
+                        )}
+
+                        <td className="border border-black py-[3px] px-1.5 text-center whitespace-nowrap text-[9pt] w-24">
+                          {row.time}
                         </td>
-                      )}
 
-                      <td className="border border-black py-[1.5px] px-1 text-center font-medium whitespace-nowrap text-[6.8pt] w-20">
-                        {row.time}
-                      </td>
-
-                      <td className="border border-black py-[1.5px] px-0.5 text-center font-bold w-6">
-                        {row.periodNum || ""}
-                      </td>
-
-                      {row.type === "CEREMONY" ? (
-                        <td
-                          colSpan={4}
-                          className="border border-black py-[1.5px] px-1.5 text-center font-black tracking-wider uppercase text-black"
-                        >
-                          {row.subjectName}
+                        <td className="border border-black py-[3px] px-1 text-center font-bold w-7">
+                          {row.periodNum || ""}
                         </td>
-                      ) : row.type === "BREAK" ? (
-                        <td
-                          colSpan={4}
-                          className="border border-black py-[1.5px] px-1.5 text-center font-black tracking-wider text-red-600"
-                        >
-                          {row.subjectName}
-                        </td>
-                      ) : (
-                        <>
-                          <td className="border border-black py-[1.5px] px-1.5 font-bold uppercase truncate max-w-[240px]">
+
+                        {row.type === "CEREMONY" ? (
+                          <td
+                            colSpan={4}
+                            className="border border-black py-[3px] px-2 text-center font-bold tracking-wider uppercase text-black"
+                          >
                             {row.subjectName}
                           </td>
-                          <td className="border border-black py-[1.5px] px-1 text-center font-bold uppercase">
-                            {row.className}
+                        ) : row.type === "BREAK" ? (
+                          <td
+                            colSpan={4}
+                            className="border border-black py-[3px] px-2 text-center font-bold tracking-wider text-red-600"
+                          >
+                            {row.subjectName}
                           </td>
-                          <td className="border border-black py-[1.5px] px-1 text-center font-bold uppercase">
-                            {row.roomName}
-                          </td>
-                          {row.jtmSpan > 0 && (
-                            <td
-                              rowSpan={row.jtmSpan}
-                              className="border border-black py-[1.5px] px-1 text-center font-black text-[7.5pt] align-middle bg-slate-50/50"
-                            >
-                              {row.jtmValue}
+                        ) : (
+                          <>
+                            <td className="border border-black py-[3px] px-2 font-bold uppercase">
+                              {row.subjectName}
                             </td>
-                          )}
-                        </>
-                      )}
-                    </tr>
-                  );
-                });
-              })}
+                            <td className="border border-black py-[3px] px-2 text-center font-bold uppercase whitespace-nowrap">
+                              {row.className}
+                            </td>
+                            <td className="border border-black py-[3px] px-2 text-center font-bold uppercase whitespace-nowrap">
+                              {row.roomName}
+                            </td>
+                            {row.jtmSpan > 0 && (
+                              <td
+                                rowSpan={row.jtmSpan}
+                                className="border border-black py-[3px] px-1 text-center font-bold text-[10pt] align-middle bg-slate-50/50"
+                              >
+                                {row.jtmValue}
+                              </td>
+                            )}
+                          </>
+                        )}
+                      </tr>
+                    );
+                  });
+                })
+              )}
             </tbody>
           </table>
         </div>
 
-        {/* 5. REKAPITULASI TUGAS TAMBAHAN & BEBAN KERJA RINGKAS (1 BARIS PADAT) */}
-        <div className="mt-1.5 px-2.5 py-1.5 border-[1.5px] border-black rounded bg-slate-50/80 text-[7pt] text-black flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+        {/* 5. REKAPITULASI TUGAS TAMBAHAN & BEBAN KERJA RINGKAS (SPASI 1) */}
+        <div className="mt-2 px-2.5 py-1.5 border-[1.5px] border-black bg-slate-50/80 text-[8.5pt] text-black flex flex-wrap items-center justify-between gap-2 leading-tight">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0">
             <span>
               <strong>Tatap Muka:</strong> {auditSummary.teachingHours} JP
             </span>
@@ -704,7 +733,7 @@ function TeacherPrintContent() {
                     .join("; ")}
             </span>
           </div>
-          <div className="flex items-center gap-2 font-bold">
+          <div className="flex items-center gap-2 font-bold whitespace-nowrap">
             <span>
               Total Diakui: {auditSummary.totalRecognized}/24 JP
             </span>

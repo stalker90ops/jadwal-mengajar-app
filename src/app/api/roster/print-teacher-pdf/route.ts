@@ -106,17 +106,6 @@ export async function GET(req: NextRequest) {
       const slots = [...day.timeSlots].sort((a, b) => a.periodNumber - b.periodNumber);
       const processedSlots: any[] = [];
 
-      if (day.dayNumber === 1) {
-        processedSlots.push({
-          type: "CEREMONY",
-          time: "07.00 - 08.00",
-          periodNum: "",
-          subjectName: "UPACARA BENDERA",
-          className: "",
-          roomName: "",
-        });
-      }
-
       let regularTeachingIndex = 1;
       slots.forEach((slot) => {
         if (slot.isBreak) {
@@ -142,72 +131,94 @@ export async function GET(req: NextRequest) {
         }
       });
 
+      const teachingIndices = processedSlots
+        .map((item, idx) => (item.type === "TEACHING" && item.sched ? idx : -1))
+        .filter((idx) => idx !== -1);
+
+      if (teachingIndices.length === 0) {
+        return;
+      }
+
+      const firstTeachIdx = teachingIndices[0];
+      const lastTeachIdx = teachingIndices[teachingIndices.length - 1];
+
+      const activeSlotsOnly: any[] = [];
+      if (day.dayNumber === 1) {
+        activeSlotsOnly.push({
+          type: "CEREMONY",
+          time: "07.00 - 08.00",
+          periodNum: "",
+          subjectName: "UPACARA BENDERA",
+          className: "",
+          roomName: "",
+        });
+      }
+
+      processedSlots.forEach((item, idx) => {
+        if (item.type === "TEACHING" && item.sched) {
+          activeSlotsOnly.push(item);
+        } else if (item.type === "BREAK" && idx > firstTeachIdx && idx < lastTeachIdx) {
+          activeSlotsOnly.push(item);
+        }
+      });
+
       const finalDayRows: any[] = [];
       let i = 0;
-      while (i < processedSlots.length) {
-        const item = processedSlots[i];
+      while (i < activeSlotsOnly.length) {
+        const item = activeSlotsOnly[i];
         if (item.type === "CEREMONY" || item.type === "BREAK") {
           finalDayRows.push({ ...item, jtmSpan: 1, jtmValue: "" });
           i++;
         } else {
           const currentSched = item.sched;
-          if (!currentSched) {
-            finalDayRows.push({
-              type: "TEACHING",
-              time: item.time,
-              periodNum: item.periodNum,
-              subjectName: "",
-              className: "",
-              roomName: "",
-              jtmSpan: 1,
-              jtmValue: "",
-            });
-            i++;
-          } else {
-            let count = 1;
-            let j = i + 1;
-            while (j < processedSlots.length) {
-              const nextItem = processedSlots[j];
-              if (nextItem.type !== "TEACHING" || !nextItem.sched) break;
-              if (
-                nextItem.sched.subjectId === currentSched.subjectId &&
-                nextItem.sched.classGroupId === currentSched.classGroupId &&
-                nextItem.sched.roomId === currentSched.roomId
-              ) {
-                count++;
-                j++;
-              } else {
-                break;
-              }
+          let count = 1;
+          let j = i + 1;
+          while (j < activeSlotsOnly.length) {
+            const nextItem = activeSlotsOnly[j];
+            if (nextItem.type !== "TEACHING" || !nextItem.sched) break;
+            if (
+              nextItem.sched.subjectId === currentSched.subjectId &&
+              nextItem.sched.classGroupId === currentSched.classGroupId &&
+              nextItem.sched.roomId === currentSched.roomId
+            ) {
+              count++;
+              j++;
+            } else {
+              break;
             }
+          }
 
+          const roomDisplay =
+            currentSched.room?.code?.toUpperCase() ||
+            currentSched.room?.name?.toUpperCase() ||
+            "";
+
+          finalDayRows.push({
+            type: "TEACHING",
+            time: item.time,
+            periodNum: item.periodNum,
+            subjectName: currentSched.subject?.name?.toUpperCase() || "",
+            className: currentSched.classGroup?.name?.toUpperCase() || "",
+            roomName: roomDisplay,
+            jtmSpan: count,
+            jtmValue: count,
+          });
+
+          for (let k = 1; k < count; k++) {
+            const nextItem = activeSlotsOnly[i + k];
             finalDayRows.push({
               type: "TEACHING",
-              time: item.time,
-              periodNum: item.periodNum,
+              time: nextItem.time,
+              periodNum: nextItem.periodNum,
               subjectName: currentSched.subject?.name?.toUpperCase() || "",
               className: currentSched.classGroup?.name?.toUpperCase() || "",
-              roomName: currentSched.room?.name?.toUpperCase() || currentSched.room?.code?.toUpperCase() || "",
-              jtmSpan: count,
-              jtmValue: count,
+              roomName: roomDisplay,
+              jtmSpan: 0,
+              jtmValue: "",
             });
-
-            for (let k = 1; k < count; k++) {
-              const nextItem = processedSlots[i + k];
-              finalDayRows.push({
-                type: "TEACHING",
-                time: nextItem.time,
-                periodNum: nextItem.periodNum,
-                subjectName: currentSched.subject?.name?.toUpperCase() || "",
-                className: currentSched.classGroup?.name?.toUpperCase() || "",
-                roomName: currentSched.room?.name?.toUpperCase() || currentSched.room?.code?.toUpperCase() || "",
-                jtmSpan: 0,
-                jtmValue: "",
-              });
-            }
-
-            i += count;
           }
+
+          i += count;
         }
       }
 
@@ -257,6 +268,10 @@ export async function GET(req: NextRequest) {
       });
     });
 
+    if (!tableRowsHtml) {
+      tableRowsHtml = `<tr><td colspan="7" style="text-align:center; padding: 16px; font-style: italic;">Belum ada jadwal mengajar tatap muka yang terjadwal untuk guru ini.</td></tr>`;
+    }
+
     const dutiesSummaryText =
       additionalDuties.length === 0
         ? "Tidak ada"
@@ -281,15 +296,15 @@ export async function GET(req: NextRequest) {
 <style>
   @page {
     size: A4 portrait;
-    margin: 5mm 7mm 5mm 7mm;
+    margin: 7mm 8mm 7mm 8mm;
   }
   html, body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Times New Roman", Times, serif;
     color: #000;
     margin: 0;
     padding: 0;
-    font-size: 7pt;
-    line-height: 1.15;
+    font-size: 9.5pt;
+    line-height: 1.05;
     background: #fff;
   }
   .kop-container {
@@ -297,110 +312,115 @@ export async function GET(req: NextRequest) {
     align-items: center;
     gap: 12px;
     padding-bottom: 3px;
+    margin: 0;
   }
   .kop-logo {
-    width: 50px;
-    max-height: 58px;
+    width: 60px;
+    max-height: 70px;
     object-fit: contain;
   }
   .kop-text {
     flex: 1;
     text-align: center;
-    line-height: 1.1;
+    line-height: 1.05;
+    margin: 0;
   }
   .kop-pemerintah, .kop-dinas {
-    font-size: 10pt;
-    font-weight: 900;
+    font-size: 12pt;
+    font-weight: 700;
     text-transform: uppercase;
-    font-family: 'Times New Roman', serif;
+    font-family: "Times New Roman", Times, serif;
+    margin: 0;
   }
   .kop-sekolah {
-    font-size: 11.5pt;
+    font-size: 14pt;
     font-weight: 900;
     text-transform: uppercase;
-    font-family: 'Times New Roman', serif;
+    font-family: "Times New Roman", Times, serif;
+    margin: 0;
   }
   .kop-alamat {
-    font-size: 6.8pt;
+    font-size: 8.5pt;
     color: #000;
-    margin-top: 1px;
+    margin: 0;
   }
   .double-line-1 {
-    border-bottom: 2px solid #000;
+    border-bottom: 2.5px solid #000;
     margin-bottom: 1px;
   }
   .double-line-2 {
     border-bottom: 1px solid #000;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
   }
   .doc-title {
     text-align: center;
     font-weight: 900;
-    font-size: 9pt;
+    font-size: 11pt;
     text-transform: uppercase;
     letter-spacing: 0.4px;
-    margin-bottom: 4px;
+    margin: 0 0 6px 0;
+    line-height: 1.05;
   }
   .meta-grid {
     display: flex;
     justify-content: space-between;
-    font-size: 7.5pt;
+    font-size: 9.5pt;
     font-weight: bold;
-    margin-bottom: 4px;
-    border-bottom: 1px solid #cbd5e1;
-    padding-bottom: 3px;
+    margin: 0 0 6px 0;
+    line-height: 1.1;
   }
   .meta-col {
     width: 49%;
   }
   .meta-row {
     display: flex;
-    margin-bottom: 1px;
+    margin: 0;
   }
   .meta-label {
-    width: 92px;
+    width: 105px;
   }
   table.schedule-table {
     width: 100%;
     border-collapse: collapse;
     border: 1.5px solid #000;
-    font-size: 6.7pt;
-    line-height: 1.1;
+    font-size: 9.5pt;
+    line-height: 1.05;
+    font-family: "Times New Roman", Times, serif;
   }
   table.schedule-table th {
     background-color: #fb923c;
     color: #000;
-    font-weight: 900;
+    font-weight: bold;
     text-transform: uppercase;
     border: 1px solid #000;
-    padding: 2px 3px;
+    padding: 3px 4px;
     text-align: center;
   }
   table.schedule-table td {
     border: 1px solid #000;
-    padding: 1.2px 3px;
+    padding: 2.5px 5px;
     vertical-align: middle;
   }
   .day-col {
     background-color: #9388a2;
     color: #000;
-    font-weight: 900;
+    font-weight: bold;
     text-align: center;
-    width: 20px;
-    font-size: 7.2pt;
+    width: 24px;
+    font-size: 9pt;
     writing-mode: vertical-rl;
     transform: rotate(180deg);
   }
   .time-col {
     text-align: center;
     white-space: nowrap;
-    width: 72px;
-    font-size: 6.5pt;
+    width: 85px;
+    font-size: 9pt;
   }
   .num-col {
     text-align: center;
     font-weight: bold;
-    width: 18px;
+    width: 24px;
   }
   .subject-col {
     font-weight: bold;
@@ -409,18 +429,20 @@ export async function GET(req: NextRequest) {
   .class-col {
     text-align: center;
     font-weight: bold;
-    width: 54px;
+    white-space: nowrap;
+    padding: 2.5px 6px;
   }
   .room-col {
     text-align: center;
     font-weight: bold;
-    width: 46px;
+    white-space: nowrap;
+    padding: 2.5px 6px;
   }
   .jtm-col {
     text-align: center;
-    font-weight: 900;
-    font-size: 7.5pt;
-    width: 32px;
+    font-weight: bold;
+    font-size: 10pt;
+    width: 38px;
     background: #fafafa;
   }
   .ceremony-row {
@@ -428,7 +450,7 @@ export async function GET(req: NextRequest) {
   }
   .special-label {
     text-align: center;
-    font-weight: 900;
+    font-weight: bold;
     text-transform: uppercase;
   }
   .break-row {
@@ -436,16 +458,16 @@ export async function GET(req: NextRequest) {
   }
   .break-label {
     text-align: center;
-    font-weight: 900;
+    font-weight: bold;
     color: #dc2626;
   }
   .rekap-bar {
-    margin-top: 4px;
+    margin-top: 6px;
     border: 1.5px solid #000;
-    border-radius: 3px;
     background: #f8fafc;
-    padding: 4px 6px;
-    font-size: 6.8pt;
+    padding: 5px 8px;
+    font-size: 8.5pt;
+    line-height: 1.1;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -453,9 +475,9 @@ export async function GET(req: NextRequest) {
   }
   .badge {
     display: inline-block;
-    padding: 1px 4px;
+    padding: 1px 5px;
     border-radius: 2px;
-    font-size: 6.5pt;
+    font-size: 8pt;
     font-weight: bold;
   }
   .badge-success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
