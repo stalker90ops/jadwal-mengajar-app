@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { ensureDefaultActiveDays, seedSampleSchoolData } from '@/lib/seed-data';
 
 export async function GET() {
