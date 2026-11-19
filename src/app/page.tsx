@@ -10,14 +10,13 @@ import {
   Users,
   DoorOpen,
   GraduationCap,
-  CheckCircle2,
-  AlertTriangle,
   Clock,
   BookOpen,
   ListFilter,
 } from "lucide-react";
 import { downloadCsvFile, DAY_NAMES } from "@/lib/csv-helper";
 import { parseJsonNumberArray } from "@/lib/schedule-validator";
+import SearchableSelect from "@/components/SearchableSelect";
 
 export default function PublicSchedulePage() {
   const [loading, setLoading] = useState(true);
@@ -26,10 +25,6 @@ export default function PublicSchedulePage() {
   const [rooms, setRooms] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [schedules, setSchedules] = useState<any[]>([]);
-  const [audit, setAudit] = useState<{ conflicts: any[]; conflictingScheduleIds: string[] }>({
-    conflicts: [],
-    conflictingScheduleIds: [],
-  });
 
   const [viewMode, setViewMode] = useState<"CLASS" | "TEACHER" | "ROOM" | "ALL">("CLASS");
   const [selectedId, setSelectedId] = useState<string>("");
@@ -49,7 +44,6 @@ export default function PublicSchedulePage() {
         setRooms(data.rooms || []);
         setClasses(data.classes || []);
         setSchedules(data.schedules || []);
-        setAudit(data.audit || { conflicts: [], conflictingScheduleIds: [] });
 
         if (data.classes?.length > 0) {
           setSelectedId(data.classes[0].id);
@@ -133,6 +127,65 @@ export default function PublicSchedulePage() {
     return teachers.find((t) => t.id === selectedId) || null;
   }, [viewMode, selectedId, teachers]);
 
+  const handleSwitchViewMode = (mode: "CLASS" | "TEACHER" | "ROOM" | "ALL") => {
+    setViewMode(mode);
+    if (mode === "CLASS" && classes.length > 0) {
+      if (!classes.some((c) => c.id === selectedId)) {
+        setSelectedId(classes[0].id);
+      }
+    } else if (mode === "TEACHER" && teachers.length > 0) {
+      if (!teachers.some((t) => t.id === selectedId)) {
+        setSelectedId(teachers[0].id);
+      }
+    } else if (mode === "ROOM" && rooms.length > 0) {
+      if (!rooms.some((r) => r.id === selectedId)) {
+        setSelectedId(rooms[0].id);
+      }
+    }
+  };
+
+  const filterOptions = useMemo(() => {
+    if (viewMode === "CLASS") {
+      return classes.map((c) => ({
+        value: c.id,
+        label: c.name,
+        badge: c.grade || undefined,
+        subLabel: c.code || undefined,
+      }));
+    }
+    if (viewMode === "TEACHER") {
+      return teachers.map((t) => ({
+        value: t.id,
+        label: t.name,
+        badge: t.code || undefined,
+        subLabel: t.nip ? `NIP: ${t.nip}` : undefined,
+      }));
+    }
+    if (viewMode === "ROOM") {
+      return rooms.map((r) => ({
+        value: r.id,
+        label: r.name,
+        badge: r.type || undefined,
+        subLabel: r.code || undefined,
+      }));
+    }
+    return [];
+  }, [viewMode, classes, teachers, rooms]);
+
+  const selectPlaceholder = useMemo(() => {
+    if (viewMode === "CLASS") return "-- Pilih Kelas --";
+    if (viewMode === "TEACHER") return "-- Pilih Guru --";
+    if (viewMode === "ROOM") return "-- Pilih Ruangan --";
+    return "-- Pilih --";
+  }, [viewMode]);
+
+  const searchPlaceholder = useMemo(() => {
+    if (viewMode === "CLASS") return "Ketik nama/kode kelas...";
+    if (viewMode === "TEACHER") return "Ketik nama/NIP/kode guru...";
+    if (viewMode === "ROOM") return "Ketik nama/kode ruangan...";
+    return "Ketik untuk mencari...";
+  }, [viewMode]);
+
   const handleExportCsv = () => {
     const headers = [
       "Hari",
@@ -195,7 +248,7 @@ export default function PublicSchedulePage() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 space-y-6 print-container">
         {/* Ringkasan Statistik Cepat */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 no-print">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 no-print">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
             <div className="text-xs text-slate-500 font-medium">Total Kelas / Rombel</div>
             <div className="text-2xl font-bold text-slate-800 mt-1">{classes.length}</div>
@@ -212,27 +265,13 @@ export default function PublicSchedulePage() {
             <div className="text-xs text-slate-500 font-medium">Hari Aktif Sekolah</div>
             <div className="text-2xl font-bold text-slate-800 mt-1">{schoolActiveDays.length} Hari</div>
           </div>
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm col-span-2 md:col-span-1">
-            <div className="text-xs text-slate-500 font-medium">Status Validasi Bentrok</div>
-            {audit.conflicts.filter((c) => c.severity === "ERROR").length === 0 ? (
-              <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-sm mt-1.5">
-                <CheckCircle2 className="w-5 h-5 shrink-0" />
-                <span>0 Bentrok (Valid)</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 text-red-600 font-bold text-sm mt-1.5">
-                <AlertTriangle className="w-5 h-5 shrink-0" />
-                <span>{audit.conflicts.filter((c) => c.severity === "ERROR").length} Konflik</span>
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Filter Bar & Tombol Cetak / Export */}
         <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 no-print">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setViewMode("CLASS")}
+              onClick={() => handleSwitchViewMode("CLASS")}
               className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === "CLASS"
                   ? "bg-blue-600 text-white shadow-sm"
@@ -243,7 +282,7 @@ export default function PublicSchedulePage() {
               Jadwal Per Kelas
             </button>
             <button
-              onClick={() => setViewMode("TEACHER")}
+              onClick={() => handleSwitchViewMode("TEACHER")}
               className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === "TEACHER"
                   ? "bg-blue-600 text-white shadow-sm"
@@ -254,7 +293,7 @@ export default function PublicSchedulePage() {
               Jadwal Per Guru
             </button>
             <button
-              onClick={() => setViewMode("ROOM")}
+              onClick={() => handleSwitchViewMode("ROOM")}
               className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === "ROOM"
                   ? "bg-blue-600 text-white shadow-sm"
@@ -265,7 +304,7 @@ export default function PublicSchedulePage() {
               Jadwal Per Ruangan
             </button>
             <button
-              onClick={() => setViewMode("ALL")}
+              onClick={() => handleSwitchViewMode("ALL")}
               className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
                 viewMode === "ALL"
                   ? "bg-blue-600 text-white shadow-sm"
@@ -279,30 +318,15 @@ export default function PublicSchedulePage() {
 
           <div className="flex flex-wrap items-center gap-3">
             {viewMode !== "ALL" && (
-              <select
-                value={selectedId}
-                onChange={(e) => setSelectedId(e.target.value)}
-                className="px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none min-w-[220px]"
-              >
-                {viewMode === "CLASS" &&
-                  classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.code})
-                    </option>
-                  ))}
-                {viewMode === "TEACHER" &&
-                  teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.code})
-                    </option>
-                  ))}
-                {viewMode === "ROOM" &&
-                  rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} ({r.code}) - {r.type}
-                    </option>
-                  ))}
-              </select>
+              <div className="w-full sm:w-72 md:w-80">
+                <SearchableSelect
+                  options={filterOptions}
+                  value={selectedId}
+                  onChange={(val) => setSelectedId(val)}
+                  placeholder={selectPlaceholder}
+                  searchPlaceholder={searchPlaceholder}
+                />
+              </div>
             )}
 
             <button
@@ -538,20 +562,13 @@ export default function PublicSchedulePage() {
                             ) : (
                               <div className="space-y-2">
                                 {cellSchedules.map((item) => {
-                                  const hasConflict = audit.conflictingScheduleIds.includes(item.id);
                                   return (
                                     <div
                                       key={item.id}
-                                      className={`p-2.5 rounded-xl border text-left shadow-sm transition-all ${
-                                        hasConflict
-                                          ? "bg-red-50 border-red-400 ring-2 ring-red-300"
-                                          : "bg-white border-slate-200"
-                                      }`}
+                                      className="p-2.5 rounded-xl border border-slate-200 bg-white text-left shadow-sm transition-all"
                                       style={{
                                         borderLeftWidth: "5px",
-                                        borderLeftColor: hasConflict
-                                          ? "#dc2626"
-                                          : item.subject?.color || "#2563eb",
+                                        borderLeftColor: item.subject?.color || "#2563eb",
                                       }}
                                     >
                                       <div className="flex items-start justify-between gap-1">
